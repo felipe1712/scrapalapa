@@ -7,6 +7,7 @@ import { runMigrations } from './db/migrate.js';
 import { seedInitialLlmConfig } from './db/seed.js';
 import { llmConfigCache } from './modules/llm/config.cache.js';
 import { llmSettingsRouter, llmPublicRouter } from './modules/llm/llm.routes.js';
+import { tendersRouter } from './modules/tenders/tenders.routes.js';
 import { workerInstance } from './worker/index.js';
 
 export async function createServerApp() {
@@ -33,9 +34,12 @@ export async function createServerApp() {
   // Rutas de estado y ejecución de pipeline (/api/llm/*)
   app.use('/api/llm', llmPublicRouter);
 
-  // Redirección raíz a la pantalla de Configuración -> Inteligencia artificial (Claude) o Dashboard
+  // Rutas de ingesta y análisis de licitaciones por URL (Lightpanda + Surya + Claude)
+  app.use('/api/tenders', tendersRouter);
+
+  // Redirección raíz a Licitaciones & Pipeline
   app.get('/', (_req, res) => {
-    res.redirect('/settings-llm.html');
+    res.redirect('/licitaciones.html');
   });
 
   return app;
