@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="description" content="">
+    <meta name="author" content="">
+    <meta name="generator" content="">
+    <title>Get WinDOORS - Admin, Dashboard, Web Application HTML template, UI kit, UI templates</title>
+
+    <!-- manifest meta -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <link rel="manifest" href="manifest.json" />
+
+    <!-- Favicons -->
+    <link rel="apple-touch-icon" href="assets/img/favicon180.png" sizes="180x180">
+    <link rel="icon" href="assets/img/favicon32.png" sizes="32x32" type="image/png">
+    <link rel="icon" href="assets/img/favicon16.png" sizes="16x16" type="image/png">
+
+    <!-- Google fonts-->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <!-- bootstrap icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+
+    <!-- swiper carousel css -->
+    <link rel="stylesheet" href="assets/vendor/swiper-7.3.1/swiper-bundle.min.css">
+
+    <!-- style css for this template -->
+    <link href="assets/scss/style.css" rel="stylesheet" id="style">
+</head>
+
+<body class="d-flex flex-column h-100 sidebar-pushcontent" data-sidebarstyle="sidebar-pushcontent">
+    <!-- sidebar-pushcontent, sidebar-overlay , sidebar-fullscreen  are classes to switch UI here-->
+
+    <!-- page loader -->
+    <div class="container-fluid h-100 position-fixed loader-wrap bg-blur">
+        <div class="row justify-content-center h-100">
+            <div class="col-auto align-self-center text-center">
+                <div class="doors animated mb-4">
+                    <div class="left-door"></div>
+                    <div class="right-door"></div>
+                </div>
+                <h5 class="mb-0">Thanks for the patience</h5>
+                <p class="text-secondary small">Amazing things coming from the <span class="text-dark">WinDOORS</span></p>
+                <div class="spinner-border text-primary mt-3" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- page loader ends -->
+
+    <!-- background -->
+    <div class="coverimg h-100 w-100 top-0 start-0 position-absolute">
+        <img src="assets/img/maintenance.jpg" alt="" />
+    </div>
+    <!-- background ends  -->
+
+
+    <!-- Begin page content -->
+    <main class="main h-100 container-fluid bg-blur rounded-0">
+        <div class="row h-100">
+            <!-- left block-->
+            <div class="col-12 col-md-12 h-100 overflow-y-auto">
+                <div class="row h-100">
+                    <div class="col-12 mb-auto">
+                        <!-- header -->
+                        <header class="header">
+                            <!-- Fixed navbar -->
+                            <nav class="navbar">
+                                <div class="container-fluid">
+                                    <a class="navbar-brand" href="#">
+                                        <div class="row">
+                                            <div class="col-auto"><img src="assets/img/favicon48.png" class="mx-100" alt="" /></div>
+                                            <div class="col ps-0 align-self-center">
+                                                <h5 class="fw-normal text-dark">WinDOORS</h5>
+                                                <p class="small text-secondary">Admin App UI</p>
+                                            </div>
+                                        </div>
+                                    </a>
+                                    <div>
+                                        <button type="button" class="btn btn-link text-secondary text-center" id="addtohome"><i class="bi bi-cloud-download-fill me-0 me-lg-1"></i> <span class="d-none d-lg-inline-block">Install</span></button>
+                                        <a href="login.html" class="btn btn-link text-secondary text-center"><i class="bi bi-person-circle me-0 me-lg-1"></i> <span class="d-none d-lg-inline-block">Login</span></a>
+                                    </div>
+                                </div>
+                            </nav>
+                        </header>
+                        <!-- header ends -->
+                    </div>
+                    <div class="col-12 align-self-center py-4 text-center">
+                        <div class="row justify-content-center">
+                            <div class="col-12 col-md-8 col-lg-7 col-xl-6 col-xxl-4">
+                                <div class="row gx-2 justify-content-center align-items-center mb-4">
+                                    <div class="col-auto">
+                                        <span id="days" class="display-3 fw-medium"></span>
+                                        <br>
+                                        <small class="text-secondary">Days</small>
+                                    </div>
+                                    <div class="col-auto fw-medium">:</div>
+                                    <div class="col-auto">
+                                        <span id="hrs" class="display-3 fw-medium"></span>
+                                        <br>
+                                        <small class="text-secondary">Hours</small>
+                                    </div>
+                                    <div class="col-auto fw-medium">:</div>
+                                    <div class="col-auto">
+                                        <span id="min" class="display-3 fw-medium"></span>
+                                        <br>
+                                        <small class="text-secondary">Minutes</small>
+                                    </div>
+                                    <div class="col-auto fw-medium">:</div>
+                                    <div class="col-auto">
+                                        <span id="sec" class="display-3 fw-medium"></span>
+                                        <br>
+                                        <small class="text-secondary">seconds</small>
+                                    </div>
+                                </div>
+                                <h1 class="display-3" id="timer">&nbsp;</h1>
+                                <h1 class="display-5 text-gradient">We're coming soon...</h1>
+                                <p class="h4 fw-light mb-4 mb-md-5">We are at the edge of our final release.</p>
+                                <p class="text-secondary mb-3">Get the latest update by subscribing our newsletter</p>
+
+                                <div class="form-group position-relative check-valid mw-400 mx-auto">
+                                    <div class="input-group input-group-lg">
+                                        <span class="input-group-text text-theme bg-white border-end-0"><i class="bi bi-envelope"></i></span>
+                                        <div class="form-floating">
+                                            <input type="email" placeholder="Subscribe email news" value="guest@maxartkiller." required="" class="form-control border-start-0" autofocus="">
+                                            <label>Subscribe email news</label>
+                                        </div>
+                                        <!-- submit button -->
+                                        <button class="btn btn-lg btn-theme z-index-5 btn-square-lg" type="button" id="submitbtn"><i class="bi bi-arrow-right"></i></button>
+                                    </div>
+                                </div>
+
+                                <br>
+                                <p class="text-secondary mt-3 mt-lg-4">Stay tuned with us</p>
+                                <ul class="nav justify-content-center">
+                                    <li class="nav-item">
+                                        <a class="nav-link text-secondary" href="https://www.facebook.com/maxartkiller/" target="_blank">
+                                            <i class="bi bi-facebook h5"></i>
+                                        </a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a class="nav-link text-secondary" href="https://twitter.com/maxartkiller" target="_blank">
+                                            <i class="bi bi-twitter h5"></i>
+                                        </a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a class="nav-link text-secondary" href="https://linkedin.com/company/maxartkiller" target="_blank">
+                                            <i class="bi bi-linkedin h5"></i>
+                                        </a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a class="nav-link text-secondary" href="https://www.instagram.com/maxartkiller/" target="_blank">
+                                            <i class="bi bi-instagram h5"></i>
+                                        </a>
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 mt-auto">
+                        <!-- footer -->
+                        <footer class="footer row">
+                            <div class="col-12 col-md-12 col-lg py-2">
+                                <span class="text-secondary small">Copyright @2022, Creatively designed by <a href="https://maxartkiller.com" target="_blank">Maxartkiller</a> on Earth ❤️</span>
+                            </div>
+                            <div class="col-12 col-md-12 col-lg-auto align-self-center">
+                                <ul class="nav small">
+                                    <li class="nav-item"><a class="nav-link" href="help-center.html">Help</a></li>
+                                    <li class="nav-item">|</li>
+                                    <li class="nav-item"><a class="nav-link" href="terms-of-use.html">Terms of Use</a></li>
+                                    <li class="nav-item">|</li>
+                                    <li class="nav-item"><a class="nav-link" href="privacy-policy.html">Privacy Policy</a></li>
+                                </ul>
+                            </div>
+                        </footer>
+                        <!-- footer ends -->
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+
+
+
+    <!-- Required jquery and libraries -->
+    <script src="assets/js/jquery-3.3.1.min.js"></script>
+    <script src="assets/js/popper.min.js"></script>
+    <script src="assets/vendor/bootstrap-5/dist/js/bootstrap.bundle.js"></script>
+
+    <!-- Customized jquery file  -->
+    <script src="assets/js/main.js"></script>
+    <script src="assets/js/color-scheme.js"></script>
+
+    <!-- PWA app service registration and works -->
+    <script src="assets/js/pwa-services.js"></script>
+
+    <!-- Chart js script -->
+    <script src="assets/vendor/chart-js-3.3.1/chart.min.js"></script>
+
+    <!-- Progress circle js script -->
+    <script src="assets/vendor/progressbar-js/progressbar.min.js"></script>
+
+    <!-- swiper js script -->
+    <script src="assets/vendor/swiper-7.3.1/swiper-bundle.min.js"></script>
+
+    <!-- page level script -->
+    <script>
+        'use strict'
+        $(document).ready(function () {
+            var countDownDate = new Date("October 20, 2022 15:37:25").getTime();
+
+            // Update the count down every 1 second
+            var x = setInterval(function () {
+
+                // Get today's date and time
+                var now = new Date().getTime();
+
+                // Find the distance between now and the count down date
+                var distance = countDownDate - now;
+
+                // Time calculations for days, hours, minutes and seconds
+                var days = Math.floor(distance / (1000 * 60 * 60 * 24));
+                var hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                var minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                var seconds = Math.floor((distance % (1000 * 60)) / 1000);
+
+                // Display the result in the element with id="demo"
+                document.getElementById("days").innerHTML = days;
+                document.getElementById("hrs").innerHTML = hours
+                document.getElementById("min").innerHTML = minutes
+                document.getElementById("sec").innerHTML = seconds
+
+                // If the count down is finished, write some text
+                if (distance < 0) {
+                    clearInterval(x);
+                    document.getElementById("timer").innerHTML = "Our website is a live.";
+                }
+            }, 1000);
+        });
+
+    </script>
+</body>
+
+</html>

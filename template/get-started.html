@@ -1,0 +1,725 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="description" content="">
+    <meta name="author" content="">
+    <meta name="generator" content="">
+    <title>Get WinDOORS - Admin, Dashboard, Web Application HTML template, UI kit, UI templates</title>
+
+    <!-- manifest meta -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+
+    <!-- Favicons -->
+    <link rel="apple-touch-icon" href="assets/img/favicon180.png" sizes="180x180">
+    <link rel="icon" href="assets/img/favicon32.png" sizes="32x32" type="image/png">
+    <link rel="icon" href="assets/img/favicon16.png" sizes="16x16" type="image/png">
+
+    <!-- Google fonts-->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <!-- bootstrap icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+
+    <!-- code highlighter css -->
+    <link href="assets/vendor/highlight/monokai-sublime.min.css" rel="stylesheet">
+
+    <!-- style css for this template -->
+    <link href="assets/scss/style.css" rel="stylesheet">
+</head>
+
+<body class="d-flex flex-column h-100 sidebar-pushcontent scrollspy-example" data-sidebarstyle="sidebar-pushcontent" data-bs-spy="scroll" data-bs-target="#docmenu" data-bs-root-margin="0px 100px -50%" data-bs-smooth-scroll="true" tabindex="0">
+    <!-- sidebar-pushcontent, sidebar-overlay , sidebar-fullscreen  are classes to switch UI here-->
+
+    <!-- page loader -->
+    <div class="container-fluid h-100 position-fixed loader-wrap bg-blur">
+        <div class="row justify-content-center h-100">
+            <div class="col-auto align-self-center text-center">
+                <div class="doors animated mb-4">
+                    <div class="left-door"></div>
+                    <div class="right-door"></div>
+                </div>
+                <h5 class="mb-0">Thanks for the patience</h5>
+                <p class="text-secondary small">Amazing things coming from the <span class="text-dark">WinDOORS</span></p>
+                <div class="spinner-border text-primary mt-3" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- page loader ends -->
+
+    <!-- background -->
+    <div class="coverimg h-100 w-100 top-0 start-0 main-bg">
+        <div class="bg-blur main-bg-overlay"></div>
+        <img src="assets/img/bg-14.jpg" alt="" />
+    </div>
+    <!-- background ends  -->
+
+    <!-- Header -->
+    <header class="header">
+        <!-- Fixed navbar -->
+        <nav class="navbar fixed-top">
+            <div class="container-fluid">
+                <div class="sidebar-width">
+                    <button class="btn btn-link btn-square menu-btn" type="button">
+                        <i class="bi bi-list fs-4"></i>
+                    </button>
+                    <a class="navbar-brand ms-2" href="home.html">
+                        <div class="row">
+                            <div class="col-auto"><img src="assets/img/favicon48.png" class="mx-100" alt="" /></div>
+                            <div class="col ps-0 align-self-center d-none d-sm-block">
+                                <h5 class="fw-normal text-dark mb-0">WinDOORS</h5>
+                                <p class="small text-secondary">Admin App UI</p>
+                            </div>
+                        </div>
+                    </a>
+                </div>
+                <div class="col">
+                    <h5 class="mb-0">Documentation</h5>
+                    <p class="text-secondary">Overview of folders, Components, styling etc. </p>
+                </div>
+                <div class="ms-auto">
+                    <div class="row">
+                        <div class="col-auto">
+                            <ul class="nav justify-content-center">
+                                <li class="nav-item">
+                                    <a class="nav-link text-secondary" href="https://www.facebook.com/maxartkiller/" target="_blank">
+                                        <i class="bi bi-facebook h5"></i>
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-secondary" href="https://twitter.com/maxartkiller" target="_blank">
+                                        <i class="bi bi-twitter h5"></i>
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-secondary" href="https://linkedin.com/company/maxartkiller" target="_blank">
+                                        <i class="bi bi-linkedin h5"></i>
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-secondary" href="https://www.instagram.com/maxartkiller/" target="_blank">
+                                        <i class="bi bi-instagram h5"></i>
+                                    </a>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </nav>
+    </header>
+    <!-- Header ends -->
+
+    <!-- Sidebar -->
+    <div class="sidebar-wrap ">
+        <div class="sidebar">
+            <div class="container">
+                <div class="row mb-4">
+                    <div class="col align-self-center">
+                        <h6>Main navigation</h6>
+                    </div>
+                </div>
+
+                <!-- user menu navigation -->
+                <div class="row mb-4">
+                    <div class="col-12 px-0">
+                        <ul class="nav nav-pills" id="docmenu">
+                            <li class="nav-item">
+                                <a class="nav-link active" aria-current="page" href="#inroduction">
+                                    <div class="avatar avatar-40 icon"><i class="bi bi-house-door"></i></div>
+                                    <div class="col">Introduction</div>
+                                    <div class="arrow"><i class="bi bi-chevron-right"></i></div>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link active" aria-current="page" href="#folders">
+                                    <div class="avatar avatar-40 icon"><i class="bi bi-folder"></i></div>
+                                    <div class="col">Folder Structure</div>
+                                    <div class="arrow"><i class="bi bi-chevron-right"></i></div>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link active" aria-current="page" href="#colorscheme">
+                                    <div class="avatar avatar-40 icon"><i class="bi bi-palette"></i></div>
+                                    <div class="col">Color scheme</div>
+                                    <div class="arrow"><i class="bi bi-chevron-right"></i></div>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link active" aria-current="page" href="#scripts">
+                                    <div class="avatar avatar-40 icon"><i class="bi bi-code-slash"></i></div>
+                                    <div class="col">Scripts</div>
+                                    <div class="arrow"><i class="bi bi-chevron-right"></i></div>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link active" aria-current="page" href="#pagestructure">
+                                    <div class="avatar avatar-40 icon"><i class="bi bi-code"></i></div>
+                                    <div class="col">Page HTML</div>
+                                    <div class="arrow"><i class="bi bi-chevron-right"></i></div>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link active" aria-current="page" href="#iconsused">
+                                    <div class="avatar avatar-40 icon"><i class="bi bi-emoji-sunglasses"></i></div>
+                                    <div class="col">Icons</div>
+                                    <div class="arrow"><i class="bi bi-chevron-right"></i></div>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link active" aria-current="page" href="#thankyou">
+                                    <div class="avatar avatar-40 icon"><i class="bi bi-flower3"></i></div>
+                                    <div class="col">Thank you</div>
+                                    <div class="arrow"><i class="bi bi-chevron-right"></i></div>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="row mb-4">
+                    <div class="col-12 px-0">
+                        <ul class="nav nav-pills">
+                            <li class="nav-item">
+                                <a class="nav-link active" aria-current="page" href="home.html">
+                                    <div class="avatar avatar-40 icon"><i class="bi bi-tv"></i></div>
+                                    <div class="col">Demo Preview</div>
+                                    <div class="arrow"><i class="bi bi-chevron-right"></i></div>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Sidebar ends -->
+
+    <!-- Begin page content -->
+    <main class="main mainheight">
+
+        <!-- introduction docs starts -->
+        <div class="container pt-4" id="inroduction">
+            <h5 class="mt-5"><span class="text-gradient">#1</span></h5>
+            <h4><span class="text-gradient">Creative & Multipurpose</span> Admin HTML Template</h4>
+            <h2>Let's get started with WinDOORS</h2>
+            <br>
+            <p class="text-secondary">WinDOORS is creative and multipurpose template. You can use it for CRM, Business application, Intranet Application, Portal service and Many more. It comes with unlimited possibilities and 10+ predefined styles which you can also mix up and create new style. Do support and spread a word for us.</p>
+            <p class="text-secondary">Template build with Bootstrap version 5.2.0 HTML CSS JS framework. We provide wide range of customized, unique creative and flexible components. We also growing component library with widgets and other third party customizations.
+                We also targeted to create different types of demo pages for our customer so they can easily get ready html pages code that can be satisfy requirements.</p>
+            <p class="text-secondary">Here, Guidelines provided is for understanding of basic structure framework and about template. We have mentioned all the criteria which are unique and for easy to understand. For the third parties we recommend to visit official documents for complete guidelines about third parties. We have used Visual Studio
+                Code as editor during this documentation and code writing. To compile scss you can use live Sass Compiler for Visual Studio Code extension, its very easy and light weight for scss compilation on realtime auto reload "live server" extension for HTML.</p>
+            <p class="text-secondary">We also created color schemes with different classes, you can switch other style by using different class name like <code>theme-yellow</code>, <code>theme-red</code>, <code>theme-purple</code> and create your own by changing variables color codes in <code>_variable.scss</code> for dark mode <code>_darkmode.scss</code>.</p>
+            <p class="text-secondary">Hope this will bring new horizon and new fresh ideas for trending Fluent design concept. <b>Please do support us and spread a word about us</b>, this will help us to create more beautiful and useful interfaces designs.</p>
+            <br>
+            <h3>L<small class="h5 mb-0">❤️</small>ve WinDOORS because every home with Window needs a DOOR.</h3>
+            <h5>A door to open new horizon for business, application, network and to communicate with real-world's humans.</h5>
+        </div>
+
+        <!-- folder docs starts -->
+        <div class="container pt-5" id="folders">
+            <br>
+            <h5 class="mt-5"><span class="text-gradient">#</span></h5>
+            <h2><span class="text-gradient">Folder</span> Structure</h2>
+            <h5>Folder structure and files guidance for our downloaded files.</h5>
+            <br>
+            <p class="text-secondary lead">Clean code requires clean arrangement of folders which helps files to remain organized.</p>
+            <p class="text-secondary">We have main folder assets and inside all the other files organized by its type to maintain HTML pages separate from other files. At the first look all other folders are inside assets folder like css, js, vendors etc. Nested structure are as below and here we have described each folder with its purpose and use.</p>
+            <div class="row my-4">
+                <div class="col-12 col-md-4 col-lg-3">
+                    <pre><code class="rounded p-3 w-100"><i class="bi bi-folder"></i>:HTML
+-- <i class="bi bi-folder"></i> assets
+---- <i class="bi bi-folder-fill"></i> css
+---- <i class="bi bi-folder-fill"></i> img
+---- <i class="bi bi-folder-fill"></i> js
+---- <i class="bi bi-folder-fill"></i> scss
+---- <i class="bi bi-folder"></i> vendor
+------ <i class="bi bi-folder-fill"></i> bootstrap-5
+------ <i class="bi bi-folder-fill"></i> chart-js-3.3.1
+------ <i class="bi bi-folder-fill"></i> chosen_v1.8.7
+------ <i class="bi bi-folder-fill"></i> Circle-pack
+------ <i class="bi bi-folder-fill"></i> ckeditor5
+------ <i class="bi bi-folder-fill"></i> daterangepicker
+------ <i class="bi bi-folder-fill"></i> dragula
+------ <i class="bi bi-folder-fill"></i> dropzpone5-9-3
+------ <i class="bi bi-folder-fill"></i> fooTable
+------ <i class="bi bi-folder-fill"></i> fullCalendar
+------ <i class="bi bi-folder-fill"></i> highlight
+------ <i class="bi bi-folder-fill"></i> jqvMap
+------ <i class="bi bi-folder-fill"></i> nouislider
+------ <i class="bi bi-folder-fill"></i> Product-tour
+------ <i class="bi bi-folder-fill"></i> progressbar-js
+------ <i class="bi bi-folder-fill"></i> simplelightbox
+------ <i class="bi bi-folder-fill"></i> smartWizard
+------ <i class="bi bi-folder-fill"></i> swiperjs-7.3.1
+------ <i class="bi bi-folder-fill"></i> tagsinput
+------ <i class="bi bi-folder-fill"></i> typeheadjs
+-- <i class="bi bi-file-earmark-code"></i> .html all other pages</code></pre>
+                </div>
+                <div class="col-12 col-md-8 col-lg-9">
+                    <h5><span class="text-gradient">HTML</span></h5>
+                    <p class="text-secondary">HTML folder have all the HTML files which you have seen in preview and dependent files with organized folder structure.</p>
+                    <ul>
+                        <li>
+                            <h6>assets</h6>
+                            <p>All the files required in HTML like css, js, images etc. are kept inside assets folder</p>
+                            <ul>
+                                <li class="mb-3"><strong>css</strong>:<br>Our main css will be converted/compiled in scss folder but if you wanted to add any other custom CSS, developer css etc. you can use this folder to keep it separate from all template codes.</li>
+                                <li class="mb-3"><strong>img</strong>: <br>Images required to add are to be kept in img folder whether its jpg or png. We have kept other logo and icons files in img folder.</li>
+                                <li class="mb-3"><strong>js</strong>: <br>Script files to run framework apart from third parties are kept inside this js folder. you can find app.js and main.js in this t change events and page level event by jquery.</li>
+                                <li class="mb-3"><strong>scss</strong>: <br>All basic scss files are kept inside this folder with the variables color codes files.We have kept all variable as simpler as it can be to understand by any of developers and designer. We thought to target each customer and kept in mind a different level of knowledge. If you wanted to change any of the style colors you can edit <code>theme-yellow</code>, <code>theme-red</code>, <code>theme-purple</code> and create your
+                                    own by changing variables color codes in <code>_variable.scss</code> for dark mode <code>_darkmode.scss</code>.</li>
+                                <li><strong>vendor</strong>: <br>All the third parties are available here in this folder. We have named such third party used in this template to give idea here how to place and organize third party when working with this template. This thing is recommended not mandatory, you can create your own folder also.</li>
+                            </ul>
+                            <br>
+                        </li>
+                        <li>
+                            <h6>HTML pages</h6>
+                            <p>All other html pages rest inside the HTML folder with assets folder parallel.</p>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- color scheme docs starts -->
+        <div class="container pt-5" id="colorscheme">
+            <br>
+            <h5 class="mt-5"><span class="text-gradient">#</span></h5>
+            <h2><span class="text-gradient">Colors</span> scheme</h2>
+            <h5>Change the theme based on your branding</h5>
+            <br>
+            <p class="text-secondary lead">Your brand color and branding is your identity. Sometime being off-bit and clean also a good choice.</p>
+            <p class="text-secondary">We have different set of predefined style with relative backgrounds and you can pick one of it by changing just class name like <code>theme-yellow</code>, <code>theme-red</code>, <code>theme-purple</code> and create your own by changing variables color codes in <code>_variable.scss</code> for dark mode <code>_darkmode.scss</code>. </p>
+
+            <h6>We have 10 predefined color schemes as below:</h6>
+            <ul>
+                <li><code>theme-blue</code></li>
+                <li><code>theme-indigo</code></li>
+                <li><code>theme-purple</code></li>
+                <li><code>theme-pink</code></li>
+                <li><code>theme-red</code></li>
+                <li><code>theme-orange</code></li>
+                <li><code>theme-yellow</code></li>
+                <li><code>theme-green</code></li>
+                <li><code>theme-teal</code></li>
+                <li><code>theme-cyan</code></li>
+            </ul>
+            <p class="text-secondary">All comes with dark mode.</p>
+            <p class="text-secondary">Here all the preview of personalization page you can just pick style and check preview of pages, elements and components.</p>
+            <br>
+            <div class="device3d"><iframe src="personalization.html"></iframe></div>
+            <br><br>
+            <h6>Wanted to change colors in themes style:</h6>
+            <pre class="my-4"><code class="language-html rounded">.theme-blue {
+    /* color schemes */
+    --WinDOORS-theme: #015EC2;
+    --WinDOORS-theme-rgb: 1, 94, 194;
+    --WinDOORS-theme-darken: #003f83;
+                
+    /* gradient bg colors */
+    --WinDOORS-theme-grad-1: #00c5dd;
+    --WinDOORS-theme-grad-2: #2253c3;
+    --WinDOORS-theme-grad-3: #dce4f7;
+                
+    /* gradient text colors */
+    --WinDOORS-theme-text-grad-1: #dd0093;
+    --WinDOORS-theme-text-grad-2: #3f22c3;
+}</code></pre>
+
+            <p class="text-secondary">All other background and text color remain in :root{ } for light mode in <code>_variable.scss</code> or darkmode root color will be in <code>_darkmode.scss</code> under .darkmode{}. Those will be default as standard so we are not recommend to fully modify all it may reflect global level. If you do so, please review all the components carefully.</p>
+            <br>
+            <div class="alert alert-warning">
+                <h6>Notes:</h6>
+                <p>When you are applying only one theme-class and wanted to run or apply that only, No other themes or theme class applied dynamically on <code>&lt;body&gt;</code> tag, Remove <code>&lt;script src="assets/js/color-scheme.js"&gt;&lt;/script&gt;</code> as that will no longer required as it manages cookie class for HTML template previews. For the development theme-styleName can be applied dynamically on <code>&lt;body&gt;</code> tag as user choice based development.</p>
+            </div>
+        </div>
+
+        <!-- scripts docs starts -->
+        <div class="container pt-5" id="scripts">
+            <br>
+            <h5 class="mt-5"><span class="text-gradient">#</span></h5>
+            <h2><span class="text-gradient">Scripts</span> Files & Codes</h2>
+            <h5>All the programmatic things needs to be coded.</h5>
+            <br>
+            <p class="text-secondary lead">Templates, Frameworks and Third Parties are main division for our script part.</p>
+            <p class="text-secondary">We have main folder assets and inside all the other files organized by its type to maintain HTML pages separate from other files. At the first look all other folders are inside assets folder like css, js, vendors etc. Nested structure are as below and here we have described each folder with its purpose and use.</p>
+            <br>
+            <!-- default framework js & scripts -->
+            <h6>Default set of scripts:</h6>
+            <p class="text-secondary">All the framework, jquery and dependent scripts should be link first like as we have shown in below code. To fresh start you can use blank.html page also. Here we have added jquery, bootstrap and popper js which is required by bootstrap framework.</p>
+            <pre class="my-4"><code class="language-html rounded">&lt;!-- Required jquery and libraries --&gt;
+&lt;script src="assets/js/jquery-3.3.1.min.js"&gt;&lt;/script&gt;
+&lt;script src="assets/js/popper.min.js"&gt;&lt;/script&gt;
+&lt;script src="assets/vendor/bootstrap-5/dist/js/bootstrap.bundle.js"&gt;&lt;/script&gt;</code></pre>
+
+            <!-- template js & scripts -->
+            <h6>Templates scripts:</h6>
+            <p class="text-secondary">Templates structure, elements, menu and view sizes are required at global level which will be needed for all pages and contents. We have grouped these type of scripts as template scripts. Here main js is templates specific while other colors-scheme js is. For the development theme-styleName can be applied dynamically on <code>&lt;body&gt;</code> tag as user choice based development.</p>
+            <pre class="my-4"><code class="language-html rounded">&lt;!-- Customized jquery file  --&gt;
+&lt;script src="assets/js/main.js"&gt;&lt;/script&gt;
+&lt;script src="assets/js/color-scheme.js"&gt;&lt;/script&gt;</code></pre>
+
+
+            <!-- page level and on page js & scripts -->
+            <h6>Third parties scripts:</h6>
+            <p class="text-secondary">We have added third party's scripts with comment line you can add as many as per your requirement. Whichever is not required, you can remove it. Just check if any of page level script code or file doesn't have any dependencies. You you remove script files related function from page level code should be removed.
+                Also we have used most of the third parties with MIT licenses but we also recommend to check license and usage from particular third party websites and refer related documents to update function's options.
+            </p>
+            <pre class="my-4"><code class="language-html rounded">&lt;!-- date range picker --&gt;
+&lt;script src="https://cdn.jsdelivr.net/momentjs/latest/moment.min.js"&gt;&lt;/script&gt;
+&lt;script src="assets/vendor/daterangepicker/daterangepicker.js"&gt;&lt;/script&gt;
+                
+&lt;!-- chosen script --&gt;
+&lt;script src="assets/vendor/chosen_v1.8.7/chosen.jquery.min.js"&gt;&lt;/script&gt;
+                
+&lt;!-- Chart js script --&gt;
+&lt;script src="assets/vendor/chart-js-3.3.1/chart.min.js"&gt;&lt;/script&gt;
+                
+&lt;!-- Progress circle js script --&gt;
+&lt;script src="assets/vendor/progressbar-js/progressbar.min.js"&gt;&lt;/script&gt;
+                
+&lt;!-- swiper js script --&gt;
+&lt;script src="assets/vendor/swiper-7.3.1/swiper-bundle.min.js"&gt;&lt;/script&gt;</code></pre>
+
+
+            <!-- page level and on page js & scripts -->
+            <h6>Page level & on-page set of scripts:</h6>
+            <p class="text-secondary">Page level components specific or any third party functions are all placed in page level section. If its small script its placed directly in page else it will be in js file separately created to arrange code well.</p>
+            <pre class="my-4"><code class="language-html rounded">&lt;!-- page level script here --&gt;
+&lt;script src="assets/js/header-title.js"&gt;&lt;/script&gt;
+&lt;script src="assets/js/project-projects.js"&gt;&lt;/script&gt;</code></pre>
+
+            <p class="text-secondary">You can edit and update page level js and codes as per your requirement and options provided by third parties in case of any third party used.</p>
+        </div>
+
+        <!-- page structure docs starts -->
+        <div class="container pt-5" id="pagestructure">
+            <br>
+            <h5 class="mt-5"><span class="text-gradient">#</span></h5>
+            <h2><span class="text-gradient">Page</span> HTML Structure</h2>
+            <h5>It's very important part to understand page level structure while UI integration in further development.</h5>
+            <br>
+            <p class="text-secondary lead">In generically we have header footer, footer company, main content and side menu as main division of page structure.</p>
+            <p class="text-secondary">Additionally we have modal boxes and chat window, chat list, notification list as out side of main content in parallel of sidebar structure to give access it globally from header. The html, head tag and body tags structure remain as main page layout. Inside body there are multiple section divided for header, footer, sidebar, chat list, notification list, chat boxes etc. those can be separate views. Main tag is routing content part.</p>
+            <pre class="my-4"><code class="language-html rounded">&lt;!doctype html&gt;
+&lt;html lang="en"&gt;
+                
+&lt;head&gt;
+    &lt;meta charset="utf-8"&gt;
+    &lt;meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"&gt;
+    &lt;meta name="description" content=""&gt;
+    &lt;meta name="author" content=""&gt;
+    &lt;meta name="generator" content=""&gt;
+    &lt;title&gt;WinDOORS - Admin, Dashboard, Web Application HTML template, UI kit, UI templates&lt;/title&gt;
+                
+    &lt;!-- manifest meta --&gt;
+    &lt;meta name="apple-mobile-web-app-capable" content="yes"&gt;
+    &lt;link rel="manifest" href="manifest.json" /&gt;
+                
+    &lt;!-- Favicons --&gt;
+    &lt;link rel="apple-touch-icon" href="assets/img/favicon180.png" sizes="180x180"&gt;
+    &lt;link rel="icon" href="assets/img/favicon32.png" sizes="32x32" type="image/png"&gt;
+    &lt;link rel="icon" href="assets/img/favicon16.png" sizes="16x16" type="image/png"&gt;
+                
+    &lt;!-- Google fonts--&gt;
+    &lt;link rel="preconnect" href="https://fonts.googleapis.com"&gt;
+    &lt;link rel="preconnect" href="https://fonts.gstatic.com" crossorigin&gt;
+                
+    &lt;!-- bootstrap icons --&gt;
+    &lt;link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css"&gt;
+                
+    &lt;!-- chosen css --&gt;
+    &lt;link rel="stylesheet" href="assets/vendor/chosen_v1.8.7/chosen.min.css"&gt;
+                
+    &lt;!-- date range picker --&gt;
+    &lt;link rel="stylesheet" href="assets/vendor/daterangepicker/daterangepicker.css"&gt;
+                
+    &lt;!-- swiper carousel css --&gt;
+    &lt;link rel="stylesheet" href="assets/vendor/swiper-7.3.1/swiper-bundle.min.css"&gt;
+                
+    &lt;!-- style css for this template --&gt;
+    &lt;link href="assets/scss/style.css" rel="stylesheet"&gt;
+&lt;/head&gt;
+                
+&lt;body class="d-flex flex-column h-100"&gt;
+                
+    &lt;!-- page loader --&gt;
+        &lt;div class="container-fluid h-100 position-fixed loader-wrap bg-blur"&gt;
+            &lt;div class="row justify-content-center h-100"&gt;
+                &lt;div class="col-auto align-self-center text-center"&gt;
+                    &lt;div class="doors animated mb-4"&gt;
+                        &lt;div class="left-door"&gt;&lt;/div&gt;
+                        &lt;div class="right-door"&gt;&lt;/div&gt;
+                    &lt;/div&gt;
+                    &lt;h5 class="mb-0"&gt;Thanks for the patience&lt;/h5&gt;
+                    &lt;p class="text-secondary small"&gt;Amazing things coming from the &lt;span class="text-dark"&gt;WinDOORS&lt;/span&gt;&lt;/p&gt;
+                    &lt;div class="spinner-border text-primary mt-3" role="status"&gt;
+                        &lt;span class="visually-hidden"&gt;Loading...&lt;/span&gt;
+                    &lt;/div&gt;
+                &lt;/div&gt;
+            &lt;/div&gt;
+        &lt;/div&gt;
+    &lt;!-- page loader ends --&gt;
+                
+    &lt;!-- background --&gt;
+    &lt;div class="coverimg h-100 w-100 top-0 start-0 main-bg"&gt;
+        &lt;div class="bg-blur main-bg-overlay"&gt;&lt;/div&gt;
+            &lt;img src="assets/img/bg-14.jpg" alt="" /&gt;
+        &lt;/div&gt;
+    &lt;!-- background ends  --&gt;
+                
+    &lt;!-- Header --&gt;
+    &lt;header class="header"&gt;
+        &lt;!-- Fixed navbar --&gt;
+        &lt;nav class="navbar fixed-top"&gt;
+            &lt;div class="container-fluid"&gt;
+                &lt;div class="sidebar-width"&gt;
+                    &lt;button class="btn btn-link btn-square menu-btn" type="button"&gt;
+                        &lt;i class="bi bi-list fs-4"&gt;&lt;/i&gt;
+                    &lt;/button&gt;
+                    &lt;a class="navbar-brand ms-2" href="index.html"&gt;
+                        &lt;div class="row"&gt;
+                            &lt;div class="col-auto"&gt;&lt;img src="assets/img/favicon48.png" class="mx-100" alt="" /&gt;&lt;/div&gt;
+                            &lt;div class="col ps-0 align-self-center d-none d-sm-block"&gt;
+                                &lt;h5 class="fw-normal text-dark mb-0"&gt;WinDOORS&lt;/h5&gt;
+                                &lt;p class="small text-secondary"&gt;Admin App UI&lt;/p&gt;
+                            &lt;/div&gt;
+                        &lt;/div&gt;
+                    &lt;/a&gt;
+                &lt;/div&gt;
+            &lt;/div&gt;
+        &lt;/nav&gt;
+    &lt;/header&gt;
+    &lt;!-- Header ends --&gt;
+                
+    &lt;!-- Sidebar --&gt;
+    &lt;div class="sidebar-wrap sidebar-pushcontent"&gt;
+        &lt;!-- sidebar-pushcontent, sidebar-overlay, sidebar-fullscreen  are classes to switch UI here--&gt;
+        &lt;div class="sidebar"&gt;
+            &lt;div class="container"&gt;
+             Sidebar
+            &lt;/div&gt;
+        &lt;/div&gt;
+    &lt;/div&gt;
+    &lt;!-- Sidebar ends --&gt;
+                
+    &lt;!-- Begin page content --&gt;
+    &lt;main class="main mainheight"&gt;
+        &lt;div class="container-fluid mb-4"&gt;
+            &lt;div class="row align-items-center page-title"&gt;
+                &lt;div class="col-12 col-md mb-2 mb-sm-0"&gt;
+                    &lt;h5 class="mb-0"&gt;Blank page&lt;/h5&gt;
+                    &lt;p class="text-secondary"&gt;Quick start new HTML page&lt;/p&gt;
+                &lt;/div&gt;
+            &lt;/div&gt;
+            &lt;div class="row"&gt;
+                &lt;nav aria-label="breadcrumb" class="breadcrumb-theme"&gt;
+                    &lt;ol class="breadcrumb"&gt;
+                        &lt;li class="breadcrumb-item"&gt;&lt;a href="index.html"&gt;WinDOORS&lt;/a&gt;&lt;/li&gt;
+                        &lt;li class="breadcrumb-item active" aria-current="page"&gt;Dashboard&lt;/li&gt;
+                    &lt;/ol&gt;
+                &lt;/nav&gt;
+            &lt;/div&gt;
+        &lt;/div&gt;
+                
+        &lt;div class="container"&gt;
+            &lt;h1&gt;Blank page&lt;/h1&gt;
+            &lt;p class="lead"&gt;Start from here&lt;/p&gt;
+            &lt;p&gt;Is always be great. Add custom page level js at bottom. Here header-title.js added to all dashboard pages where page header and titles added&lt;/p&gt;
+        &lt;/div&gt;
+                
+        &lt;!-- Footer --&gt;
+        &lt;div class="container-fluid footer-page mt-4 py-5"&gt;
+            Footer     
+        &lt;/div&gt;
+    &lt;/main&gt;
+                
+    &lt;!-- footer --&gt;
+    &lt;footer class="footer mt-auto"&gt;
+        &lt;div class="container-fluid"&gt;
+            &lt;div class="row"&gt;
+                &lt;div class="col-12 col-md col-lg py-2"&gt;
+                    &lt;span class="text-secondary small"&gt;Copyright @2022, Creatively designed by &lt;a href="https://maxartkiller.com" target="_blank"&gt;Maxartkiller&lt;/a&gt; on Earth ❤️&lt;/span&gt;
+                &lt;/div&gt;
+                &lt;div class="col-12 col-md-auto col-lg-auto align-self-center"&gt;
+                    &lt;ul class="nav small"&gt;
+                        &lt;li class="nav-item"&gt;&lt;a class="nav-link" href=""&gt;Help&lt;/a&gt;&lt;/li&gt;
+                        &lt;li class="nav-item"&gt;|&lt;/li&gt;
+                        &lt;li class="nav-item"&gt;&lt;a class="nav-link" href=""&gt;Terms of Use&lt;/a&gt;&lt;/li&gt;
+                        &lt;li class="nav-item"&gt;|&lt;/li&gt;
+                        &lt;li class="nav-item"&gt;&lt;a class="nav-link" href=""&gt;Privacy Policy&lt;/a&gt;&lt;/li&gt;
+                    &lt;/ul&gt;
+                &lt;/div&gt;
+            &lt;/div&gt;
+        &lt;/div&gt;
+    &lt;/footer&gt;
+    &lt;!-- footer ends --&gt;
+                
+    &lt;!-- Rightbar --&gt;
+    &lt;div class="rightbar-wrap"&gt;
+        &lt;div class="rightbar"&gt;
+                    
+        &lt;!-- chat window --&gt;
+        &lt;div class="chatwindow d-none" id="chatwindow"&gt;               
+        &lt;/div&gt;
+        &lt;!-- chat window ends --&gt;
+                    
+        &lt;!-- notifications window --&gt;
+        &lt;div class="notificationwindow d-none h-100 overflow-y-auto" id="notificationwindow"&gt;
+        &lt;/div&gt;
+        &lt;!-- notifications window ends --&gt;
+                    
+        &lt;/div&gt;
+    &lt;/div&gt;
+     &lt;!-- Rightbar ends --&gt;
+                
+    &lt;!-- dropdown for support  --&gt;
+    &lt;div class="chatboxes w-auto align-right bottom-0 mb-2"&gt;
+                
+        &lt;!-- dropdown for support  --&gt;
+        &lt;div class="dropup"&gt;
+            &lt;div class="dd-arrow-none dropdown-toggle" data-bs-display="static" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" id="supportdd" role="button"&gt;
+                &lt;span class="position-absolute top-0 start-100 translate-middle p-1 bg-success border border-light rounded-circle"&gt;
+                    &lt;span class="visually-hidden"&gt;New alerts&lt;/span&gt;
+                &lt;/span&gt;
+                &lt;figure class="avatar avatar-40 coverimg rounded-circle shadow bg-primary"&gt;
+                    &lt;img src="assets/img/favicon72.png" alt=""&gt;
+                &lt;/figure&gt;
+            &lt;/div&gt;
+            &lt;div class="dropdown-menu dropdown-menu-end w-300 p-0"&gt;
+                &lt;!-- chat box here  --&gt;                                                    
+            &lt;/div&gt;
+            &lt;button class="chat-close btn btn-danger text-white"&gt;&lt;i class="bi bi-x"&gt;&lt;/i&gt;&lt;/button&gt;
+        &lt;/div&gt;
+    &lt;/div&gt;
+    &lt;!-- chat window ends --&gt;                
+                
+    &lt;!-- Required jquery and libraries --&gt;
+    &lt;script src="assets/js/jquery-3.3.1.min.js"&gt;&lt;/script&gt;
+    &lt;script src="assets/js/popper.min.js"&gt;&lt;/script&gt;
+    &lt;script src="assets/vendor/bootstrap-5/dist/js/bootstrap.bundle.js"&gt;&lt;/script&gt;
+                
+    &lt;!-- Customized jquery file  --&gt;
+    &lt;script src="assets/js/main.js"&gt;&lt;/script&gt;
+    &lt;script src="assets/js/color-scheme.js"&gt;&lt;/script&gt;
+                
+    &lt;!-- PWA app service registration and works --&gt;
+    &lt;script src="assets/js/pwa-services.js"&gt;&lt;/script&gt;
+                
+    &lt;!-- date range picker --&gt;
+    &lt;script src="https://cdn.jsdelivr.net/momentjs/latest/moment.min.js"&gt;&lt;/script&gt;
+    &lt;script src="assets/vendor/daterangepicker/daterangepicker.js"&gt;&lt;/script&gt;
+                
+    &lt;!-- chosen script --&gt;
+    &lt;script src="assets/vendor/chosen_v1.8.7/chosen.jquery.min.js"&gt;&lt;/script&gt;
+                
+    &lt;!-- Chart js script --&gt;
+    &lt;script src="assets/vendor/chart-js-3.3.1/chart.min.js"&gt;&lt;/script&gt;
+                
+    &lt;!-- Progress circle js script --&gt;
+    &lt;script src="assets/vendor/progressbar-js/progressbar.min.js"&gt;&lt;/script&gt;
+                
+    &lt;!-- swiper js script --&gt;
+    &lt;script src="assets/vendor/swiper-7.3.1/swiper-bundle.min.js"&gt;&lt;/script&gt;
+                
+    &lt;!-- page level script here --&gt;
+    &lt;script src="assets/js/header-title.js"&gt;&lt;/script&gt;
+                
+&lt;/body&gt;
+                
+&lt;/html&gt;</code></pre>
+            <p class="text-secondary">In page structure where... the pages codes are switched is inside the element main <code> &lt;!-- Begin page content --&gt;</code> and the next line is <code>&lt;main class="main mainheight"&gt;</code>. You can create routing inside main tag elements for dynamic age namings and configure page level details.</p>
+        </div>
+
+        <!-- icons docs starts -->
+        <div class="container pt-5 mb-5" id="iconsused">
+            <br>
+            <h5 class="mt-5"><span class="text-gradient">#</span></h5>
+            <h2><span class="text-gradient">Icons</span> recommendations</h2>
+            <h5>As technologies grows icons become more space saving visual labeling</h5>
+            <br>
+            <p class="text-secondary lead">Templates preview and pages uses Bootstrap icons v1.8.1.</p>
+            <p class="text-secondary">We all know icons becomes more space saving and visual indication for the many of device centric design. User day by day becomes more and more self learner. So icons we use should be more realistic to the topics we are representing.
+                If you use more relevant icon, use will understand it just by visuals no need to read its label. Here for wide range of audience we recommend to icons and label also. You can use of refer any of the library for web fonts and add it in place of bootstrap icons.
+                Read all icons label/cheetsheet for available icons at <a href="https://icons.getbootstrap.com/" target="_blank">Bootstrap icons</a>.
+            </p>
+            <pre class="my-4"><code class="language-html rounded">&lt;link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css"&gt;</code></pre>
+            <p class="text-secondary">Icons usage, Below code will represent icon as : <i class="bi bi-house-door text-theme h6 mb-0"></i>:</p>
+            <pre class="my-4"><code class="language-html rounded">&lt;i class"bi bi-house-door"&gt;&lt;i&gt;</code></pre>
+
+            <p class="text-secondary"></p>
+            <br>
+            <div class="alert alert-warning">
+                <h6>Notes:</h6>
+                <p>We recommend not to use multiple web fonts as it also increase load time and may impact on Performance. For few unique icons you can create svg and add into project but do not use multiple types font icons library.</p>
+            </div>
+
+        </div>
+
+        <!-- Thank you docs starts -->
+        <div class="container pt-5 mb-5" id="thankyou">
+            <br>
+            <h5 class="mt-5"><span class="text-gradient">#</span></h5>
+            <h2><span class="text-gradient">Thank</span> You</h2>
+            <h5>We loved to see you here!</h5>
+            <br>
+            <p class="text-secondary lead">GetWinDOORS UI UX HTML templates will grow with your support</p>
+            <p class="text-secondary">If you have any query or questions regarding this template or need help, you can always reach us at <b>info@maxartkiller.com</b>. We will try our best to solve your problem and support you. You connect with us on our social media accounts to stay tuned with us. </p>
+            <p class="text-secondary">We thank for all images used to <a href="https://www.pixabay.com" target="_blank">Pixabay.com</a>. Movie, Brand Logo, Currency Logo or Products images are just for demo purpose nothing will be booked or purchase from this website, application, dashboard demo.</p>
+        </div>
+        <br><br>
+
+
+    </main>
+
+    <!-- footer -->
+    <footer class="footer mt-auto">
+        <div class="container-fluid">
+            <div class="row">
+                <div class="col-12 col-md col-lg py-2">
+                    <span class="text-secondary small">Copyright @2022, Creatively designed by <a href="https://maxartkiller.com" target="_blank">Maxartkiller</a> on Earth ❤️</span>
+                </div>
+                <div class="col-12 col-md-auto col-lg-auto align-self-center">
+                    <ul class="nav small">
+                        <li class="nav-item"><a class="nav-link" href="#help">Help</a></li>
+                        <li class="nav-item">|</li>
+                        <li class="nav-item"><a class="nav-link" href="">Support us</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </footer>
+    <!-- footer ends -->
+
+
+
+    <!-- Required jquery and libraries -->
+    <script src="assets/js/jquery-3.3.1.min.js"></script>
+    <script src="assets/js/popper.min.js"></script>
+    <script src="assets/vendor/bootstrap-5/dist/js/bootstrap.bundle.js"></script>
+
+    <!-- Customized jquery file  -->
+    <script src="assets/js/main.js"></script>
+    <script src="assets/js/color-scheme.js"></script>
+
+    <!-- Code highlighter js  -->
+    <script src="assets/vendor/highlight/highlight.min.js"></script>
+
+    <!-- page level script -->
+    <script>
+        // first, find all the div.code blocks
+        document.querySelectorAll('code.language-html').forEach(el => {
+            // then highlight each
+            hljs.highlightElement(el);
+        });
+    </script>
+
+</body>
+
+</html>

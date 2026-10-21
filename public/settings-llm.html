@@ -1,0 +1,944 @@
+<!doctype html>
+<html lang="es">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="description" content="Configuración de Inteligencia Artificial (Claude - Anthropic) persistente en PostgreSQL">
+    <title>Scrapper Admin — Configuración → Inteligencia artificial (Claude)</title>
+
+    <!-- Favicons WinDOORS -->
+    <link rel="apple-touch-icon" href="assets/img/favicon180.png" sizes="180x180">
+    <link rel="icon" href="assets/img/favicon32.png" sizes="32x32" type="image/png">
+    <link rel="icon" href="assets/img/favicon16.png" sizes="16x16" type="image/png">
+
+    <!-- Google fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+
+    <!-- Date range picker WinDOORS -->
+    <link rel="stylesheet" href="assets/vendor/daterangepicker/daterangepicker.css">
+
+    <!-- Hoja de estilos principal de la plantilla WinDOORS -->
+    <link href="assets/scss/style.css" rel="stylesheet">
+
+    <style>
+        .key-masked-badge {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.95rem;
+            letter-spacing: 0.5px;
+        }
+        .model-spec-pill {
+            font-size: 0.78rem;
+            padding: 0.25rem 0.6rem;
+            border-radius: 50rem;
+        }
+        .table-profiles textarea {
+            font-size: 0.82rem;
+            min-height: 62px;
+        }
+        .llm-disabled-overlay {
+            border-left: 4px solid #f59e0b;
+        }
+        .hot-reload-indicator {
+            transition: all 0.25s ease;
+        }
+    </style>
+</head>
+
+<body class="d-flex flex-column h-100 sidebar-pushcontent" data-sidebarstyle="sidebar-pushcontent">
+
+    <!-- Page loader WinDOORS -->
+    <div class="container-fluid h-100 position-fixed loader-wrap bg-blur">
+        <div class="row justify-content-center h-100">
+            <div class="col-auto align-self-center text-center">
+                <div class="doors animated mb-4">
+                    <div class="left-door"></div>
+                    <div class="right-door"></div>
+                </div>
+                <h5 class="mb-0">Cargando panel de configuración</h5>
+                <p class="text-secondary small">Scrapper &amp; Licitaciones <span class="text-dark">WinDOORS UI</span></p>
+                <div class="spinner-border text-primary mt-3" role="status">
+                    <span class="visually-hidden">Cargando...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- page loader ends -->
+
+    <!-- Background WinDOORS -->
+    <div class="coverimg h-100 w-100 top-0 start-0 main-bg">
+        <div class="bg-blur main-bg-overlay"></div>
+        <img src="assets/img/bg-14.jpg" alt="" />
+    </div>
+    <!-- background ends -->
+
+    <!-- Header -->
+    <header class="header">
+        <nav class="navbar fixed-top">
+            <div class="container-fluid">
+                <div class="sidebar-width">
+                    <button class="btn btn-link btn-square menu-btn" type="button">
+                        <i class="bi bi-list fs-4"></i>
+                    </button>
+                    <a class="navbar-brand ms-2" href="settings-llm.html">
+                        <div class="row">
+                            <div class="col-auto"><img src="assets/img/favicon48.png" class="mx-100" alt="" /></div>
+                            <div class="col ps-0 align-self-center d-none d-sm-block">
+                                <h5 class="fw-normal text-dark mb-0">Scrapper IA</h5>
+                                <p class="small text-secondary">Licitaciones &amp; OCR</p>
+                            </div>
+                        </div>
+                    </a>
+                </div>
+
+                <!-- Indicador en vivo de Caché PostgreSQL LISTEN/NOTIFY -->
+                <div class="d-none d-lg-flex align-items-center gap-2">
+                    <span class="badge bg-light text-dark border px-3 py-2 hot-reload-indicator" id="cacheVersionBadge">
+                        <i class="bi bi-database-check text-theme me-1"></i>
+                        PostgreSQL Config: <strong id="headerConfigVersion">v1</strong>
+                    </span>
+                    <span class="badge bg-light text-secondary border px-3 py-2" id="headerPipelineBadge">
+                        <i class="bi bi-cpu text-success me-1"></i>
+                        Pipeline Local (Surya + Reglas): <strong>Activo</strong>
+                    </span>
+                </div>
+
+                <!-- Selector de Rol para demostración RBAC + Perfil Usuario -->
+                <div class="ms-auto">
+                    <div class="row align-items-center">
+                        <div class="col-auto d-none d-md-block">
+                            <div class="input-group input-group-sm border rounded bg-white">
+                                <span class="input-group-text bg-none border-0 text-secondary small">
+                                    <i class="bi bi-shield-lock me-1 text-theme"></i>Rol activo:
+                                </span>
+                                <select id="roleSimulatorSelect" class="form-select form-select-sm border-0 fw-bold text-dark">
+                                    <option value="admin" selected>Administrador (admin)</option>
+                                    <option value="operador">Operador (sin acceso admin)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-auto">
+                            <div class="d-flex align-items-center">
+                                <figure class="avatar avatar-40 rounded-circle coverimg vm me-2 mb-0">
+                                    <img src="assets/img/user-1.jpg" alt="" />
+                                </figure>
+                                <div class="d-none d-lg-block">
+                                    <p class="mb-0 lh-1">
+                                        <span class="text-dark fw-medium" id="currentAdminUser">admin@scrapper.local</span><br>
+                                        <small class="text-secondary small">Rol: Administrador</small>
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </nav>
+    </header>
+    <!-- Header ends -->
+
+    <!-- Sidebar WinDOORS -->
+    <div class="sidebar-wrap">
+        <div class="sidebar">
+            <div class="container">
+                <div class="row mb-3">
+                    <div class="col align-self-center">
+                        <h6>Navegación Principal</h6>
+                    </div>
+                </div>
+
+                <div class="row mb-4">
+                    <div class="col-12 px-0">
+                        <ul class="nav nav-pills">
+                            <li class="nav-item">
+                                <a class="nav-link" href="#panel-pipeline-test" id="navPipelineLink">
+                                    <div class="avatar avatar-40 icon"><i class="bi bi-file-earmark-richtext"></i></div>
+                                    <div class="col">Licitaciones &amp; Pipeline</div>
+                                    <div class="arrow"><i class="bi bi-chevron-right"></i></div>
+                                </a>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a class="nav-link dropdown-toggle show active" data-bs-toggle="dropdown" data-bs-auto-close="false" data-bs-display="static" href="#" role="button" aria-expanded="true">
+                                    <div class="avatar avatar-40 icon"><i class="bi bi-gear"></i></div>
+                                    <div class="col">Configuración</div>
+                                    <div class="arrow">
+                                        <i class="bi bi-chevron-down plus"></i>
+                                        <i class="bi bi-chevron-up minus"></i>
+                                    </div>
+                                </a>
+                                <ul class="dropdown-menu show">
+                                    <li>
+                                        <a class="dropdown-item nav-link active" href="settings-llm.html">
+                                            <div class="avatar avatar-40 icon"><i class="bi bi-stars text-theme"></i></div>
+                                            <div class="col align-self-center">Inteligencia artificial (Claude)</div>
+                                            <div class="arrow"><i class="bi bi-chevron-right"></i></div>
+                                        </a>
+                                    </li>
+                                </ul>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Estado resumido de Presupuesto en Sidebar -->
+                <div class="row mb-2">
+                    <div class="col align-self-center">
+                        <h6>Estado del Servicio IA</h6>
+                    </div>
+                </div>
+                <div class="card border-0 mb-3 shadow-sm">
+                    <div class="card-body p-3">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="small text-secondary">Proveedor:</span>
+                            <span class="badge bg-blue text-white">Anthropic Claude</span>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="small text-secondary">Estado LLM:</span>
+                            <span id="sidebarLlmStatusBadge" class="badge bg-secondary">Cargando...</span>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="small text-secondary">Invalidaciones NOTIFY:</span>
+                            <span id="sidebarNotifyCount" class="fw-bold text-dark small">0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Sidebar ends -->
+
+    <!-- Begin page content -->
+    <main class="main mainheight">
+        <!-- Page Title & Breadcrumb -->
+        <div class="container-fluid mb-3">
+            <div class="row align-items-center page-title">
+                <div class="col-12 col-md mb-2 mb-sm-0">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <h5 class="mb-0">Configuración → Inteligencia artificial (Claude)</h5>
+                        <span class="badge bg-theme text-white">Fase 5c</span>
+                        <span class="badge bg-light text-dark border" id="statusPillTop">Sincronizado con PostgreSQL</span>
+                    </div>
+                    <p class="text-secondary small mb-0">
+                        Administración persistente en PostgreSQL con invalidación de caché en memoria (<code>LISTEN / NOTIFY</code>), cifrado <code>AES-256-GCM</code> y control presupuestal.
+                    </p>
+                </div>
+
+                <!-- Interruptor General LLM habilitado / deshabilitado -->
+                <div class="col-12 col-md-auto mt-2 mt-md-0">
+                    <div class="card border-0 shadow-sm px-3 py-2">
+                        <div class="d-flex align-items-center gap-3">
+                            <div>
+                                <div class="fw-bold text-dark small">Interruptor General LLM</div>
+                                <div class="text-secondary" style="font-size: 0.75rem;" id="llmSwitchHelperText">Equivale a LLM_ENABLED</div>
+                            </div>
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input" type="checkbox" role="switch" id="llmActivoSwitch" style="width: 3rem; height: 1.5rem; cursor: pointer;">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row mt-2">
+                <nav aria-label="breadcrumb" class="breadcrumb-theme">
+                    <ol class="breadcrumb mb-0">
+                        <li class="breadcrumb-item"><a href="settings-llm.html">Configuración</a></li>
+                        <li class="breadcrumb-item active" aria-current="page">Inteligencia artificial (Claude)</li>
+                    </ol>
+                </nav>
+            </div>
+        </div>
+
+        <div class="container-fluid">
+            <!-- Alerta de bloqueo por Rol No-Admin (oculta salvo que se simule rol operador) -->
+            <div id="nonAdminAlert" class="alert alert-danger border-0 shadow-sm d-none mb-4" role="alert">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-shield-slash-fill fs-3 me-3"></i>
+                    <div>
+                        <h6 class="mb-1">Acceso Restringido — Exclusivo Rol Administrador</h6>
+                        <p class="mb-0 small" id="nonAdminAlertText">
+                            Los endpoints <code>/api/settings/llm/*</code> rechazaron la petición con código <strong>403 Forbidden</strong>. Cambia el selector superior a <strong>Administrador (admin)</strong> para gestionar la configuración.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Aviso Global cuando LLM está deshabilitado o no hay clave válida -->
+            <div id="llmFallbackBanner" class="alert alert-warning border-0 shadow-sm llm-disabled-overlay d-none mb-4" role="alert">
+                <div class="row align-items-center">
+                    <div class="col-auto">
+                        <div class="avatar avatar-40 rounded bg-yellow text-white">
+                            <i class="bi bi-exclamation-triangle-fill fs-5"></i>
+                        </div>
+                    </div>
+                    <div class="col">
+                        <h6 class="mb-1 text-dark">Funciones de IA desactivadas — Pipeline local (Surya OCR + Reglas) en operación</h6>
+                        <p class="mb-0 small text-secondary" id="llmFallbackBannerText">
+                            No hay clave de API válida o el módulo LLM está deshabilitado. Todas las funciones dependientes de Claude se han ocultado/desactivado con aviso, mientras el motor local sigue procesando documentos normalmente.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Toast / Alerta de feedback de guardado -->
+            <div id="globalFeedbackAlert" class="alert d-none border-0 shadow-sm mb-3" role="alert"></div>
+
+            <!-- Navegación por Pestañas estilo WinDOORS -->
+            <ul class="nav nav-tabs nav-WinDOORS nav-lg mb-4" id="llmAdminTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="tab-general-btn" data-bs-toggle="tab" data-bs-target="#tab-general" type="button" role="tab">
+                        <i class="bi bi-sliders me-1"></i> 1. Conexión, Modelo y Presupuesto
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="tab-profiles-btn" data-bs-toggle="tab" data-bs-target="#tab-profiles" type="button" role="tab">
+                        <i class="bi bi-layers me-1"></i> 2. Perfiles por Tarea &amp; Catálogo de Modelos
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="tab-usage-btn" data-bs-toggle="tab" data-bs-target="#tab-usage" type="button" role="tab">
+                        <i class="bi bi-bar-chart-line me-1"></i> 3. Panel de Consumo y Bitácora (CSV)
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="tab-history-btn" data-bs-toggle="tab" data-bs-target="#tab-history" type="button" role="tab">
+                        <i class="bi bi-clock-history me-1"></i> 4. Auditoría &amp; Simulador Pipeline
+                    </button>
+                </li>
+            </ul>
+
+            <div class="tab-content" id="llmAdminTabsContent">
+
+                <!-- ===================================================================== -->
+                <!-- PESTAÑA 1: CONEXIÓN, MODELO POR DEFECTO, AVANZADOS Y PRESUPUESTO      -->
+                <!-- ===================================================================== -->
+                <div class="tab-pane fade show active" id="tab-general" role="tabpanel">
+                    <form id="llmSettingsForm" novalidate>
+                        <div class="row">
+                            <!-- Columna Izquierda: Clave API + Modelo por Defecto + max_tokens -->
+                            <div class="col-12 col-xl-7 mb-4">
+                                <div class="card border-0 shadow-sm mb-4">
+                                    <div class="card-header bg-none border-0 pt-3 pb-0">
+                                        <div class="row align-items-center">
+                                            <div class="col">
+                                                <h6 class="title mb-0"><i class="bi bi-key-fill text-theme me-2"></i>Credenciales de Anthropic y Modelo Principal</h6>
+                                            </div>
+                                            <div class="col-auto">
+                                                <button type="button" id="btnSyncModels" class="btn btn-sm btn-outline-primary">
+                                                    <i class="bi bi-arrow-repeat me-1"></i> Sincronizar modelos (GET /v1/models)
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="card-body">
+                                        <!-- Clave de API Enmascarada o Input Password -->
+                                        <label class="form-label fw-medium small text-secondary mb-2">
+                                            Clave de API de Anthropic (Cifrada en BD con <code>AES-256-GCM</code>)
+                                        </label>
+
+                                        <!-- Vista cuando ya existe una clave guardada -->
+                                        <div id="savedKeyContainer" class="p-3 rounded bg-light border mb-3 d-none">
+                                            <div class="row align-items-center g-2">
+                                                <div class="col-12 col-sm">
+                                                    <div class="d-flex align-items-center gap-2">
+                                                        <i class="bi bi-shield-lock-fill text-success fs-5"></i>
+                                                        <div>
+                                                            <span class="badge bg-dark key-masked-badge" id="maskedApiKeyDisplay">sk-ant-…XXXX</span>
+                                                            <div class="text-secondary" style="font-size: 0.75rem;">
+                                                                La clave en claro nunca regresa al frontend ni aparece en logs.
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="col-12 col-sm-auto d-flex gap-2">
+                                                    <button type="button" id="btnReplaceKey" class="btn btn-sm btn-outline-secondary">
+                                                        <i class="bi bi-pencil-square me-1"></i> Reemplazar
+                                                    </button>
+                                                    <button type="button" id="btnDeleteKey" class="btn btn-sm btn-outline-danger">
+                                                        <i class="bi bi-trash me-1"></i> Eliminar
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Input tipo password para ingresar o reemplazar la clave -->
+                                        <div id="newKeyInputWrapper" class="mb-3">
+                                            <div class="form-group position-relative check-valid">
+                                                <div class="input-group input-group-lg">
+                                                    <span class="input-group-text text-theme bg-white border-end-0"><i class="bi bi-key"></i></span>
+                                                    <div class="form-floating">
+                                                        <input type="password" id="apiKeyInput" class="form-control border-start-0" placeholder="sk-ant-api03-..." autocomplete="new-password">
+                                                        <label for="apiKeyInput" id="apiKeyInputLabel">Ingresa la clave de API (sk-ant-api03-...)</label>
+                                                    </div>
+                                                    <button class="btn btn-outline-secondary border-start-0 bg-white" type="button" id="btnToggleKeyVisibility" title="Mostrar/Ocultar mientras escribes">
+                                                        <i class="bi bi-eye"></i>
+                                                    </button>
+                                                    <button class="btn btn-outline-secondary d-none" type="button" id="btnCancelReplaceKey">
+                                                        Cancelar
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <small class="text-secondary d-block mt-1">
+                                                Al guardar se cifra con <code>ENCRYPTION_KEY</code> y solo se conservan los últimos 4 caracteres para mostrar la máscara.
+                                            </small>
+                                        </div>
+
+                                        <hr class="my-3 opacity-25">
+
+                                        <!-- Selector de Modelo por Defecto alimentado desde llm_models -->
+                                        <div class="mb-3">
+                                            <div class="form-group position-relative check-valid">
+                                                <div class="input-group input-group-lg">
+                                                    <span class="input-group-text text-theme bg-white border-end-0"><i class="bi bi-cpu"></i></span>
+                                                    <div class="form-floating">
+                                                        <select class="form-select border-start-0" id="defaultModelSelect" required>
+                                                            <!-- Alimentado dinámicamente desde llm_models -->
+                                                        </select>
+                                                        <label for="defaultModelSelect">Modelo por defecto (Catálogo llm_models)</label>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <!-- Badges visibles con ventana de contexto, max_output_tokens y precios -->
+                                            <div class="d-flex flex-wrap gap-2 mt-2" id="selectedModelSpecsBar">
+                                                <span class="badge bg-light text-dark border model-spec-pill">
+                                                    <i class="bi bi-arrows-angle-expand text-theme me-1"></i>
+                                                    Ventana de contexto: <strong id="specContextWindow">200,000</strong> tokens
+                                                </span>
+                                                <span class="badge bg-light text-dark border model-spec-pill">
+                                                    <i class="bi bi-box-arrow-right text-theme me-1"></i>
+                                                    Máx. salida modelo: <strong id="specMaxOutput">8,192</strong> tokens
+                                                </span>
+                                                <span class="badge bg-light text-dark border model-spec-pill">
+                                                    <i class="bi bi-cash-coin text-success me-1"></i>
+                                                    Entrada: <strong id="specPriceIn">$3.00</strong> / MTok · Salida: <strong id="specPriceOut">$15.00</strong> / MTok
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        <!-- Tamaño máximo de respuesta (max_tokens): campo numérico con slider -->
+                                        <div class="p-3 rounded bg-light border mb-3">
+                                            <div class="row align-items-center mb-2">
+                                                <div class="col">
+                                                    <label for="maxTokensInput" class="form-label fw-medium mb-0">
+                                                        Tamaño máximo de respuesta (<code>max_tokens</code>)
+                                                    </label>
+                                                    <p class="text-secondary small mb-0">
+                                                        Validado contra el <code>max_output_tokens</code> del modelo elegido (<span id="maxTokensLimitLabel">8192</span>).
+                                                    </p>
+                                                </div>
+                                                <div class="col-auto" style="width: 150px;">
+                                                    <div class="input-group input-group-sm">
+                                                        <input type="number" id="maxTokensInput" class="form-control fw-bold text-end" min="1" max="64000" step="64" value="4096" required>
+                                                        <span class="input-group-text">tok</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <input type="range" class="form-range" id="maxTokensSlider" min="64" max="64000" step="64" value="4096">
+                                            <div class="d-flex justify-content-between small text-secondary">
+                                                <span>Mín: 64</span>
+                                                <span id="maxTokensValidationMsg" class="text-success fw-medium">Dentro del límite del modelo</span>
+                                                <span id="maxTokensSliderMax">Máx: 64,000</span>
+                                            </div>
+                                        </div>
+
+                                        <!-- Parámetros Avanzados (Colapsables) -->
+                                        <div class="accordion" id="advancedParamsAccordion">
+                                            <div class="accordion-item border rounded">
+                                                <h2 class="accordion-header" id="headingAdv">
+                                                    <button class="accordion-button collapsed py-2 bg-light" type="button" data-bs-toggle="collapse" data-bs-target="#collapseAdv" aria-expanded="false" aria-controls="collapseAdv">
+                                                        <i class="bi bi-sliders2-vertical text-theme me-2"></i>
+                                                        <span class="fw-medium">Parámetros avanzados</span>
+                                                        <small class="text-secondary ms-2">(temperature, top_p, timeout, reintentos, máx. caracteres, URL base)</small>
+                                                    </button>
+                                                </h2>
+                                                <div id="collapseAdv" class="accordion-collapse collapse" aria-labelledby="headingAdv" data-bs-parent="#advancedParamsAccordion">
+                                                    <div class="accordion-body">
+                                                        <div class="row g-3">
+                                                            <div class="col-12 col-sm-6 col-md-4">
+                                                                <div class="form-floating">
+                                                                    <input type="number" id="temperatureInput" class="form-control" min="0" max="1" step="0.05" placeholder="0.2">
+                                                                    <label for="temperatureInput">Temperature (0 - 1, opcional)</label>
+                                                                </div>
+                                                            </div>
+                                                            <div class="col-12 col-sm-6 col-md-4">
+                                                                <div class="form-floating">
+                                                                    <input type="number" id="topPInput" class="form-control" min="0" max="1" step="0.05" placeholder="Opcional">
+                                                                    <label for="topPInput">Top P (0 - 1, opcional)</label>
+                                                                </div>
+                                                            </div>
+                                                            <div class="col-12 col-sm-6 col-md-4">
+                                                                <div class="form-floating">
+                                                                    <input type="number" id="timeoutMsInput" class="form-control" min="1000" max="600000" step="1000" value="60000" required>
+                                                                    <label for="timeoutMsInput">Timeout (ms)</label>
+                                                                </div>
+                                                            </div>
+                                                            <div class="col-12 col-sm-6 col-md-4">
+                                                                <div class="form-floating">
+                                                                    <input type="number" id="maxRetriesInput" class="form-control" min="0" max="10" step="1" value="3" required>
+                                                                    <label for="maxRetriesInput">Máx. Reintentos (429/5xx)</label>
+                                                                </div>
+                                                            </div>
+                                                            <div class="col-12 col-sm-6 col-md-4">
+                                                                <div class="form-floating">
+                                                                    <input type="number" id="maxInputCharsInput" class="form-control" min="500" max="5000000" step="1000" value="120000" required>
+                                                                    <label for="maxInputCharsInput">Límite caracteres entrada</label>
+                                                                </div>
+                                                            </div>
+                                                            <div class="col-12 col-sm-6 col-md-4">
+                                                                <div class="form-floating">
+                                                                    <input type="text" id="anthropicVersionInput" class="form-control" value="2023-06-01" required>
+                                                                    <label for="anthropicVersionInput">Anthropic Version</label>
+                                                                </div>
+                                                            </div>
+                                                            <div class="col-12">
+                                                                <div class="form-floating">
+                                                                    <input type="url" id="apiBaseUrlInput" class="form-control" value="https://api.anthropic.com" required>
+                                                                    <label for="apiBaseUrlInput">URL Base de la API (api_base_url)</label>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Columna Derecha: Presupuesto y Límites + Botón Probar Conexión -->
+                            <div class="col-12 col-xl-5 mb-4">
+                                <!-- Presupuesto y Límites -->
+                                <div class="card border-0 shadow-sm mb-4">
+                                    <div class="card-header bg-none border-0 pt-3 pb-0">
+                                        <h6 class="title mb-0"><i class="bi bi-wallet2 text-theme me-2"></i>Presupuesto y Límites de Consumo</h6>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="row g-3 mb-3">
+                                            <div class="col-12 col-sm-6">
+                                                <div class="form-floating">
+                                                    <input type="number" id="limiteTokensDiarioInput" class="form-control" min="1000" step="10000" placeholder="Ej. 500000">
+                                                    <label for="limiteTokensDiarioInput">Límite Tokens Diario (opc.)</label>
+                                                </div>
+                                            </div>
+                                            <div class="col-12 col-sm-6">
+                                                <div class="form-floating">
+                                                    <input type="number" id="limiteCostoMensualInput" class="form-control" min="0.5" step="5" placeholder="Ej. 100.00">
+                                                    <label for="limiteCostoMensualInput">Límite Costo Mensual USD (opc.)</label>
+                                                </div>
+                                            </div>
+                                            <div class="col-12">
+                                                <div class="form-floating">
+                                                    <select id="accionLimiteSelect" class="form-select">
+                                                        <option value="avisar">Solo avisar (emitir alerta pero permitir llamadas)</option>
+                                                        <option value="pausar">Pausar llamadas automáticamente (fallback a Surya + reglas)</option>
+                                                    </select>
+                                                    <label for="accionLimiteSelect">Acción al alcanzar los límites</label>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Barras de progreso de presupuesto actual -->
+                                        <div class="p-3 rounded bg-light border">
+                                            <div class="mb-2">
+                                                <div class="d-flex justify-content-between small mb-1">
+                                                    <span class="text-secondary">Tokens consumidos hoy:</span>
+                                                    <span class="fw-bold" id="budgetTokensTodayLabel">0 / Sin límite</span>
+                                                </div>
+                                                <div class="progress" style="height: 8px;">
+                                                    <div id="budgetTokensProgressBar" class="progress-bar bg-theme" role="progressbar" style="width: 0%"></div>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div class="d-flex justify-content-between small mb-1">
+                                                    <span class="text-secondary">Costo estimado mes actual:</span>
+                                                    <span class="fw-bold" id="budgetCostMonthLabel">$0.0000 / Sin límite</span>
+                                                </div>
+                                                <div class="progress" style="height: 8px;">
+                                                    <div id="budgetCostProgressBar" class="progress-bar bg-success" role="progressbar" style="width: 0%"></div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Tarjeta de Prueba de Conexión y Guardado -->
+                                <div class="card border-0 shadow-sm">
+                                    <div class="card-header bg-none border-0 pt-3 pb-0">
+                                        <h6 class="title mb-0"><i class="bi bi-plug-fill text-theme me-2"></i>Diagnóstico y Acciones</h6>
+                                    </div>
+                                    <div class="card-body">
+                                        <p class="text-secondary small mb-3">
+                                            <strong>Probar conexión</strong> realiza una llamada mínima a Anthropic usando los valores actuales del formulario (incluso antes de guardar) y traduce cualquier error de la API.
+                                        </p>
+
+                                        <div class="d-flex flex-wrap gap-2 mb-3">
+                                            <button type="button" id="btnTestConnection" class="btn btn-outline-primary flex-grow-1">
+                                                <i class="bi bi-lightning-charge-fill me-1"></i> Probar conexión
+                                            </button>
+                                            <button type="submit" id="btnSaveSettings" class="btn btn-theme flex-grow-1">
+                                                <i class="bi bi-check2-circle me-1"></i> Guardar configuración en BD
+                                            </button>
+                                        </div>
+
+                                        <!-- Resultado del botón "Probar conexión" -->
+                                        <div id="testConnectionResultBox" class="d-none rounded p-3 border">
+                                            <div class="d-flex align-items-center justify-content-between mb-2">
+                                                <span class="fw-bold" id="testResultTitle">Resultado de la prueba</span>
+                                                <span class="badge" id="testResultBadge"></span>
+                                            </div>
+                                            <p class="small mb-2" id="testResultMessage"></p>
+                                            <div id="testResultMetrics" class="row g-2 text-center d-none">
+                                                <div class="col-4">
+                                                    <div class="p-2 rounded bg-white border">
+                                                        <div class="text-secondary" style="font-size: 0.7rem;">MODELO</div>
+                                                        <div class="fw-bold small text-truncate" id="testMetricModel">-</div>
+                                                    </div>
+                                                </div>
+                                                <div class="col-4">
+                                                    <div class="p-2 rounded bg-white border">
+                                                        <div class="text-secondary" style="font-size: 0.7rem;">LATENCIA</div>
+                                                        <div class="fw-bold small text-success" id="testMetricLatency">-</div>
+                                                    </div>
+                                                </div>
+                                                <div class="col-4">
+                                                    <div class="p-2 rounded bg-white border">
+                                                        <div class="text-secondary" style="font-size: 0.7rem;">TOKENS USADOS</div>
+                                                        <div class="fw-bold small" id="testMetricTokens">-</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- ===================================================================== -->
+                <!-- PESTAÑA 2: PERFILES POR TAREA Y CATÁLOGO DE MODELOS                   -->
+                <!-- ===================================================================== -->
+                <div class="tab-pane fade" id="tab-profiles" role="tabpanel">
+                    <!-- Tabla Editable de Perfiles por Tarea -->
+                    <div class="card border-0 shadow-sm mb-4">
+                        <div class="card-header bg-none border-0 pt-3 pb-0">
+                            <div class="row align-items-center">
+                                <div class="col">
+                                    <h6 class="title mb-1"><i class="bi bi-sliders text-theme me-2"></i>Perfiles por Caso de Uso (<code>llm_task_profiles</code>)</h6>
+                                    <p class="text-secondary small mb-0">
+                                        Si <strong>Modelo</strong>, <strong>max_tokens</strong> o <strong>Temperature</strong> se dejan vacíos, la tarea hereda automáticamente los valores por defecto de <code>llm_settings</code>.
+                                    </p>
+                                </div>
+                                <div class="col-auto">
+                                    <button type="button" id="btnSaveProfiles" class="btn btn-theme">
+                                        <i class="bi bi-save me-1"></i> Guardar perfiles por tarea
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-hover align-middle table-profiles mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th style="width: 18%;">Tarea / Caso de Uso</th>
+                                            <th style="width: 22%;">Modelo Asignado</th>
+                                            <th style="width: 12%;">Max Tokens</th>
+                                            <th style="width: 10%;">Temp.</th>
+                                            <th style="width: 30%;">System Prompt (Cacheable)</th>
+                                            <th style="width: 8%;" class="text-center">Activo</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="taskProfilesTableBody">
+                                        <!-- Renderizado dinámicamente por JS -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Catálogo Editable de Modelos (llm_models) -->
+                    <div class="card border-0 shadow-sm mb-4">
+                        <div class="card-header bg-none border-0 pt-3 pb-0">
+                            <div class="row align-items-center">
+                                <div class="col">
+                                    <h6 class="title mb-1"><i class="bi bi-collection text-theme me-2"></i>Catálogo de Modelos de Anthropic (<code>llm_models</code>)</h6>
+                                    <p class="text-secondary small mb-0">
+                                        Precios por millón de tokens (USD) y disponibilidad editables. El botón <strong>Sincronizar modelos</strong> consulta <code>GET /v1/models</code>.
+                                    </p>
+                                </div>
+                                <div class="col-auto d-flex gap-2">
+                                    <button type="button" id="btnSyncModelsCatalog" class="btn btn-outline-primary btn-sm">
+                                        <i class="bi bi-arrow-repeat me-1"></i> Sincronizar modelos
+                                    </button>
+                                    <button type="button" id="btnSaveModelsPricing" class="btn btn-theme btn-sm">
+                                        <i class="bi bi-check2 me-1"></i> Guardar precios y catálogo
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-sm align-middle mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Model ID</th>
+                                            <th>Nombre Visible</th>
+                                            <th>Ventana Contexto</th>
+                                            <th>Máx. Output Tokens</th>
+                                            <th>Precio Entrada ($/MTok)</th>
+                                            <th>Precio Salida ($/MTok)</th>
+                                            <th class="text-center">Disponible</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="modelsCatalogTableBody">
+                                        <!-- Renderizado dinámicamente -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===================================================================== -->
+                <!-- PESTAÑA 3: PANEL DE CONSUMO (GRÁFICAS + TABLAS + EXPORTAR CSV)        -->
+                <!-- ===================================================================== -->
+                <div class="tab-pane fade" id="tab-usage" role="tabpanel">
+                    <div class="card border-0 shadow-sm mb-4">
+                        <div class="card-header bg-none border-0 pt-3 pb-0">
+                            <div class="row align-items-center g-2">
+                                <div class="col-12 col-md">
+                                    <h6 class="title mb-0"><i class="bi bi-graph-up-arrow text-theme me-2"></i>Panel de Consumo y Bitácora (<code>llm_usage</code>)</h6>
+                                </div>
+                                <div class="col-6 col-md-auto">
+                                    <select id="usageFilterTask" class="form-select form-select-sm">
+                                        <option value="all">Todas las tareas</option>
+                                        <option value="completar_campos">completar_campos</option>
+                                        <option value="resumen_licitacion">resumen_licitacion</option>
+                                        <option value="analisis">analisis</option>
+                                        <option value="constructor_recetas">constructor_recetas</option>
+                                        <option value="test_conexion">test_conexion</option>
+                                    </select>
+                                </div>
+                                <div class="col-6 col-md-auto">
+                                    <button type="button" id="btnRefreshUsage" class="btn btn-sm btn-outline-secondary">
+                                        <i class="bi bi-arrow-clockwise me-1"></i> Actualizar
+                                    </button>
+                                    <button type="button" id="btnExportCsv" class="btn btn-sm btn-success ms-1">
+                                        <i class="bi bi-filetype-csv me-1"></i> Exportar CSV
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <!-- Gráficas Chart.js (Tokens por Día y Costo por Tarea/Modelo) -->
+                            <div class="row mb-4">
+                                <div class="col-12 col-lg-7 mb-3 mb-lg-0">
+                                    <div class="p-3 rounded border bg-white h-100">
+                                        <h6 class="small fw-bold text-secondary mb-3">Evolución Diaria de Tokens (Entrada + Salida + Caché)</h6>
+                                        <div style="height: 220px;">
+                                            <canvas id="usageByDayChart"></canvas>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-12 col-lg-5">
+                                    <div class="p-3 rounded border bg-white h-100">
+                                        <h6 class="small fw-bold text-secondary mb-3">Costo Estimado (USD) por Tarea</h6>
+                                        <div style="height: 220px;">
+                                            <canvas id="costByTaskChart"></canvas>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Tablas de Desglose por Día, por Tarea y por Modelo -->
+                            <div class="row g-3 mb-4">
+                                <div class="col-12 col-lg-4">
+                                    <h6 class="small fw-bold text-dark">Consumo por Día</h6>
+                                    <div class="table-responsive border rounded bg-white">
+                                        <table class="table table-sm table-striped mb-0 small">
+                                            <thead>
+                                                <tr>
+                                                    <th>Día</th>
+                                                    <th class="text-end">Tokens</th>
+                                                    <th class="text-end">Costo USD</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="usageByDayTableBody"></tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                                <div class="col-12 col-lg-4">
+                                    <h6 class="small fw-bold text-dark">Consumo por Tarea</h6>
+                                    <div class="table-responsive border rounded bg-white">
+                                        <table class="table table-sm table-striped mb-0 small">
+                                            <thead>
+                                                <tr>
+                                                    <th>Tarea</th>
+                                                    <th class="text-end">Llamadas</th>
+                                                    <th class="text-end">Tokens</th>
+                                                    <th class="text-end">Costo USD</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="usageByTaskTableBody"></tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                                <div class="col-12 col-lg-4">
+                                    <h6 class="small fw-bold text-dark">Consumo por Modelo</h6>
+                                    <div class="table-responsive border rounded bg-white">
+                                        <table class="table table-sm table-striped mb-0 small">
+                                            <thead>
+                                                <tr>
+                                                    <th>Modelo</th>
+                                                    <th class="text-end">Llamadas</th>
+                                                    <th class="text-end">Tokens</th>
+                                                    <th class="text-end">Costo USD</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="usageByModelTableBody"></tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Bitácora reciente de llamadas -->
+                            <h6 class="small fw-bold text-dark">Bitácora Detallada de Llamadas Recientes</h6>
+                            <div class="table-responsive border rounded bg-white">
+                                <table class="table table-sm table-hover align-middle mb-0 small">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Fecha</th>
+                                            <th>Tarea</th>
+                                            <th>Modelo</th>
+                                            <th class="text-end">In / Out / Caché</th>
+                                            <th class="text-end">Costo USD</th>
+                                            <th class="text-end">Latencia</th>
+                                            <th class="text-center">Estado</th>
+                                            <th>Licitación / Doc</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="recentUsageLogsTableBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===================================================================== -->
+                <!-- PESTAÑA 4: HISTORIAL DE AUDITORÍA Y VERIFICADOR EN VIVO DE PIPELINE   -->
+                <!-- ===================================================================== -->
+                <div class="tab-pane fade" id="tab-history" role="tabpanel">
+                    <div class="row">
+                        <!-- Simulador de Funciones Dependientes y Hot-Reload -->
+                        <div class="col-12 col-lg-6 mb-4" id="panel-pipeline-test">
+                            <div class="card border-0 shadow-sm h-100">
+                                <div class="card-header bg-none border-0 pt-3 pb-0">
+                                    <h6 class="title mb-1"><i class="bi bi-cpu-fill text-theme me-2"></i>Verificador de Hot-Reload y Pipeline Local (Surya + Reglas)</h6>
+                                    <p class="text-secondary small mb-0">
+                                        Comprueba que cambiar el modelo o <code>max_tokens</code> se refleja inmediatamente en la siguiente llamada sin reiniciar, y que las funciones IA se desactivan con aviso cuando no hay clave válida.
+                                    </p>
+                                </div>
+                                <div class="card-body">
+                                    <!-- Bloque de botones dependientes del LLM -->
+                                    <div class="p-3 rounded border bg-light mb-3">
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <span class="fw-bold small">Acciones de IA en Licitaciones (Dependientes de Claude):</span>
+                                            <span id="dependentActionsStatusBadge" class="badge bg-secondary">Verificando...</span>
+                                        </div>
+                                        <div id="dependentActionsWarning" class="alert alert-warning py-2 px-3 small d-none mb-2"></div>
+                                        <div class="d-flex flex-wrap gap-2">
+                                            <button type="button" class="btn btn-sm btn-theme llm-dependent-btn" data-task="completar_campos">
+                                                <i class="bi bi-magic me-1"></i> Completar Campos (JSON Zod)
+                                            </button>
+                                            <button type="button" class="btn btn-sm btn-outline-primary llm-dependent-btn" data-task="resumen_licitacion">
+                                                <i class="bi bi-card-text me-1"></i> Resumen Licitación
+                                            </button>
+                                            <button type="button" class="btn btn-sm btn-outline-primary llm-dependent-btn" data-task="analisis">
+                                                <i class="bi bi-shield-check me-1"></i> Análisis de Pliegos
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Botón para inspeccionar configuración efectiva en la siguiente llamada -->
+                                    <div class="d-flex gap-2 mb-3">
+                                        <button type="button" id="btnCheckEffectiveNextCall" class="btn btn-sm btn-outline-dark">
+                                            <i class="bi bi-eye me-1"></i> Inspeccionar Config de la Siguiente Llamada
+                                        </button>
+                                        <button type="button" id="btnRunPipelineFallbackDemo" class="btn btn-sm btn-outline-success">
+                                            <i class="bi bi-play-circle me-1"></i> Ejecutar Pipeline (Claude / Fallback Local Surya)
+                                        </button>
+                                    </div>
+
+                                    <pre id="pipelineInspectorOutput" class="p-3 rounded bg-dark text-light small mb-0" style="max-height: 280px; overflow: auto;">Haz clic en "Inspeccionar Config de la Siguiente Llamada" para verificar el hot-reload en memoria.</pre>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tabla de Auditoría llm_settings_history -->
+                        <div class="col-12 col-lg-6 mb-4">
+                            <div class="card border-0 shadow-sm h-100">
+                                <div class="card-header bg-none border-0 pt-3 pb-0">
+                                    <h6 class="title mb-1"><i class="bi bi-journal-check text-theme me-2"></i>Historial de Auditoría (<code>llm_settings_history</code>)</h6>
+                                    <p class="text-secondary small mb-0">
+                                        Registro inmutable de quién, cuándo y qué campos se modificaron (la clave de API nunca se almacena en claro).
+                                    </p>
+                                </div>
+                                <div class="card-body">
+                                    <div class="table-responsive" style="max-height: 390px; overflow-y: auto;">
+                                        <table class="table table-sm table-hover align-middle small mb-0">
+                                            <thead class="table-light">
+                                                <tr>
+                                                    <th>Fecha</th>
+                                                    <th>Usuario</th>
+                                                    <th>Entidad / Acción</th>
+                                                    <th>Versión</th>
+                                                    <th>Cambios (Diff Seguro)</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="historyAuditTableBody"></tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer WinDOORS -->
+    <footer class="footer mt-auto">
+        <div class="container-fluid">
+            <div class="row">
+                <div class="col-12 col-md py-2">
+                    <span class="text-secondary small">Scrapper &amp; Licitaciones — Módulo LLM Claude (Fase 5c) sobre plantilla <strong>WinDOORS</strong></span>
+                </div>
+                <div class="col-12 col-md-auto align-self-center">
+                    <span class="text-secondary small">PostgreSQL + <code>@anthropic-ai/sdk</code> + <code>AES-256-GCM</code></span>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Scripts base de la plantilla WinDOORS -->
+    <script src="assets/js/jquery-3.3.1.min.js"></script>
+    <script src="assets/js/popper.min.js"></script>
+    <script src="assets/vendor/bootstrap-5/dist/js/bootstrap.bundle.js"></script>
+    <script src="assets/js/main.js"></script>
+    <script src="assets/js/color-scheme.js"></script>
+    <script src="assets/vendor/chart-js-3.3.1/chart.min.js"></script>
+
+    <!-- Aplicación cliente del Módulo de Configuración de Claude -->
+    <script src="js/llm-settings.app.js"></script>
+</body>
+
+</html>
