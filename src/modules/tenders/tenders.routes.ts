@@ -13,6 +13,9 @@ const IngestUrlSchema = z.object({
   ocr_mode: z.enum(['auto', 'forzar_surya']).optional().default('auto'),
   process_attachments: z.boolean().optional().default(true),
   max_attachments: z.coerce.number().int().min(1).max(10).optional().default(3),
+  auth_username: z.string().trim().optional(),
+  auth_password: z.string().optional(),
+  auth_login_url: z.string().trim().optional(),
 });
 
 /**
@@ -134,7 +137,15 @@ tendersRouter.post('/ingest-url', async (req: Request, res: Response) => {
     return;
   }
 
-  const { url, ocr_mode, process_attachments, max_attachments } = parsed.data;
+  const {
+    url,
+    ocr_mode,
+    process_attachments,
+    max_attachments,
+    auth_username,
+    auth_password,
+    auth_login_url,
+  } = parsed.data;
   const startTotal = Date.now();
 
   // Crear registro inicial en tenders
@@ -147,8 +158,17 @@ tendersRouter.post('/ingest-url', async (req: Request, res: Response) => {
   const tenderId = insertRes.rows[0].id;
 
   try {
-    // PASO 1: Navegar URL con Lightpanda
-    const pageData = await lightpandaService.readTenderUrl(url);
+    // PASO 1: Navegar URL con Lightpanda (incluyendo autenticación opcional si fue proporcionada)
+    const pageData = await lightpandaService.readTenderUrl(
+      url,
+      auth_username && auth_password
+        ? {
+            username: auth_username,
+            password: auth_password,
+            loginUrl: auth_login_url || undefined,
+          }
+        : undefined
+    );
 
     // PASO 2: Descargar y procesar documentos (PDF en Surya OCR / Word en Mammoth)
     const processedDocs: ProcessedDocumentResult[] = [];
@@ -163,7 +183,11 @@ tendersRouter.post('/ingest-url', async (req: Request, res: Response) => {
         const docResult = await documentProcessorService.downloadAndProcessDocument(
           att.url,
           att.fileType,
-          ocr_mode
+          ocr_mode,
+          {
+            cookie: pageData.sessionCookieHeader,
+            authorization: pageData.basicAuthHeader,
+          }
         );
         processedDocs.push(docResult);
 

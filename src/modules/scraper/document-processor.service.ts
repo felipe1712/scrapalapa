@@ -33,14 +33,23 @@ export class DocumentProcessorService {
   async downloadAndProcessDocument(
     fileUrl: string,
     fileType: 'pdf' | 'docx' | 'doc',
-    ocrMode: 'auto' | 'forzar_surya' = 'auto'
+    ocrMode: 'auto' | 'forzar_surya' = 'auto',
+    authHeaders?: { cookie?: string; authorization?: string }
   ): Promise<ProcessedDocumentResult> {
+    const headers: Record<string, string> = {
+      'User-Agent':
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Lightpanda/1.0 Chrome/124.0.0.0 Safari/537.36',
+    };
+    if (authHeaders?.cookie) {
+      headers['Cookie'] = authHeaders.cookie;
+    }
+    if (authHeaders?.authorization) {
+      headers['Authorization'] = authHeaders.authorization;
+    }
+
     const res = await fetch(fileUrl, {
       redirect: 'follow',
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Lightpanda/1.0 Chrome/124.0.0.0 Safari/537.36',
-      },
+      headers,
       signal: AbortSignal.timeout(45000),
     });
 
@@ -109,7 +118,7 @@ export class DocumentProcessorService {
   ): Promise<ProcessedDocumentResult> {
     // 1. Intentar primero el puente Python de Surya OCR (scripts/surya_extract.py)
     const pythonCandidates = [
-      process.env.SURYA_PYTHON_BIN || '/var/www/scrapalapa/.venv-surya/bin/python',
+      process.env.SURYA_PYTHON_BIN || process.env.SURYA_PYTHON_PATH || '/var/www/scrapalapa/.venv-surya/bin/python',
       'python3',
       'python',
     ];

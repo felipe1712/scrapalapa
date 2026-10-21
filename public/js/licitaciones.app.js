@@ -309,7 +309,16 @@
 
     const ocrMode = document.getElementById('ocrModeSelect')?.value || 'auto';
     const processAttachments = Boolean(document.getElementById('processAttachmentsSwitch')?.checked);
+    const requiresAuth = Boolean(document.getElementById('requiresAuthSwitch')?.checked);
+    const authUsername = document.getElementById('authUsernameInput')?.value?.trim() || '';
+    const authPassword = document.getElementById('authPasswordInput')?.value || '';
+    const authLoginUrl = document.getElementById('authLoginUrlInput')?.value?.trim() || '';
     const btn = document.getElementById('btnIngestUrl');
+
+    if (requiresAuth && (!authUsername || !authPassword)) {
+      showAlert('Ingresa el usuario y la contraseña para autenticar el acceso a la URL.', 'warning');
+      return;
+    }
 
     if (btn) {
       btn.disabled = true;
@@ -323,14 +332,21 @@
     const stepTimer2 = setTimeout(() => setStepperState(3), 4200);
 
     try {
+      const payload = {
+        url,
+        ocr_mode: ocrMode,
+        process_attachments: processAttachments,
+      };
+      if (requiresAuth) {
+        payload.auth_username = authUsername;
+        payload.auth_password = authPassword;
+        if (authLoginUrl) payload.auth_login_url = authLoginUrl;
+      }
+
       const res = await fetch('/api/tenders/ingest-url', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          url,
-          ocr_mode: ocrMode,
-          process_attachments: processAttachments,
-        }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
 
@@ -409,6 +425,16 @@
 
     document.getElementById('ingestUrlForm')?.addEventListener('submit', handleIngestSubmit);
     document.getElementById('btnRefreshTenders')?.addEventListener('click', loadTendersHistory);
+
+    const authSwitch = document.getElementById('requiresAuthSwitch');
+    const authBox = document.getElementById('authCredentialsBox');
+    authSwitch?.addEventListener('change', () => {
+      if (authSwitch.checked) {
+        authBox?.classList.remove('d-none');
+      } else {
+        authBox?.classList.add('d-none');
+      }
+    });
 
     document.querySelectorAll('.reanalyze-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
