@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="es">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <title>Scrapper — Licitaciones &amp; Pipeline</title>
+
+    <link rel="apple-touch-icon" href="assets/img/favicon180.png" sizes="180x180">
+    <link rel="icon" href="assets/img/favicon32.png" sizes="32x32" type="image/png">
+    <link rel="icon" href="assets/img/favicon16.png" sizes="16x16" type="image/png">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <link href="assets/scss/style.css" rel="stylesheet">
+</head>
+
+<body class="d-flex flex-column h-100 sidebar-pushcontent" data-sidebarstyle="sidebar-pushcontent">
+
+    <!-- Page loader WinDOORS -->
+    <div class="container-fluid h-100 position-fixed loader-wrap bg-blur">
+        <div class="row justify-content-center h-100">
+            <div class="col-auto align-self-center text-center">
+                <div class="doors animated mb-4">
+                    <div class="left-door"></div>
+                    <div class="right-door"></div>
+                </div>
+                <h5 class="mb-0">Cargando</h5>
+                <div class="spinner-border text-primary mt-3" role="status">
+                    <span class="visually-hidden">Cargando...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Background WinDOORS -->
+    <div class="coverimg h-100 w-100 top-0 start-0 main-bg">
+        <div class="bg-blur main-bg-overlay"></div>
+        <img src="assets/img/bg-14.jpg" alt="" />
+    </div>
+
+    <!-- Header limpio -->
+    <header class="header">
+        <nav class="navbar fixed-top">
+            <div class="container-fluid">
+                <div class="sidebar-width">
+                    <button class="btn btn-link btn-square menu-btn" type="button">
+                        <i class="bi bi-list fs-4"></i>
+                    </button>
+                    <a class="navbar-brand ms-2" href="licitaciones.html">
+                        <div class="row">
+                            <div class="col-auto"><img src="assets/img/favicon48.png" class="mx-100" alt="" /></div>
+                            <div class="col ps-0 align-self-center d-none d-sm-block">
+                                <h5 class="fw-normal text-dark mb-0">Scrapper</h5>
+                                <p class="small text-secondary">Gestión de Licitaciones</p>
+                            </div>
+                        </div>
+                    </a>
+                </div>
+
+                <div class="ms-auto">
+                    <div class="d-flex align-items-center">
+                        <figure class="avatar avatar-40 rounded-circle coverimg vm me-2 mb-0">
+                            <img src="assets/img/user-1.jpg" alt="" />
+                        </figure>
+                        <div class="d-none d-lg-block">
+                            <p class="mb-0 lh-1">
+                                <span class="text-dark fw-medium">Administrador</span><br>
+                                <small class="text-secondary small">Panel de Control</small>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <!-- Sidebar WinDOORS -->
+    <div class="sidebar-wrap">
+        <div class="sidebar">
+            <div class="container">
+                <div class="row mb-3">
+                    <div class="col align-self-center">
+                        <h6>Menú Principal</h6>
+                    </div>
+                </div>
+
+                <div class="row mb-4">
+                    <div class="col-12 px-0">
+                        <ul class="nav nav-pills">
+                            <li class="nav-item">
+                                <a class="nav-link active" href="licitaciones.html">
+                                    <div class="avatar avatar-40 icon"><i class="bi bi-file-earmark-richtext"></i></div>
+                                    <div class="col">Licitaciones &amp; Pipeline</div>
+                                    <div class="arrow"><i class="bi bi-chevron-right"></i></div>
+                                </a>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a class="nav-link dropdown-toggle show" data-bs-toggle="dropdown" data-bs-auto-close="false" data-bs-display="static" href="#" role="button" aria-expanded="true">
+                                    <div class="avatar avatar-40 icon"><i class="bi bi-gear"></i></div>
+                                    <div class="col">Configuración</div>
+                                    <div class="arrow">
+                                        <i class="bi bi-chevron-down plus"></i>
+                                        <i class="bi bi-chevron-up minus"></i>
+                                    </div>
+                                </a>
+                                <ul class="dropdown-menu show">
+                                    <li>
+                                        <a class="dropdown-item nav-link" href="settings-llm.html">
+                                            <div class="avatar avatar-40 icon"><i class="bi bi-stars text-theme"></i></div>
+                                            <div class="col align-self-center">Inteligencia artificial (Claude)</div>
+                                            <div class="arrow"><i class="bi bi-chevron-right"></i></div>
+                                        </a>
+                                    </li>
+                                </ul>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="card border-0 mb-3 shadow-sm">
+                    <div class="card-body p-3">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="small text-secondary">Proveedor:</span>
+                            <span class="badge bg-blue text-white">Anthropic Claude</span>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="small text-secondary">Estado IA:</span>
+                            <span id="sidebarLlmStatusBadge" class="badge bg-secondary">Cargando...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <main class="main mainheight">
+        <div class="container-fluid mb-3">
+            <div class="row align-items-center page-title">
+                <div class="col-12 col-md">
+                    <h5 class="mb-0">Licitaciones &amp; Pipeline de Extracción</h5>
+                </div>
+                <div class="col-12 col-md-auto mt-2 mt-md-0">
+                    <a href="settings-llm.html" class="btn btn-sm btn-outline-primary">
+                        <i class="bi bi-gear me-1"></i> Configurar IA (Claude)
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="container-fluid">
+            <!-- Aviso cuando Claude está desactivado o sin API Key -->
+            <div id="pipelineWarningBanner" class="alert alert-warning border-0 shadow-sm d-none mb-4">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-exclamation-triangle-fill fs-4 me-3 text-warning"></i>
+                    <div>
+                        <h6 class="mb-1 text-dark">Funciones de IA desactivadas — Pipeline local activo</h6>
+                        <p class="mb-0 small text-secondary" id="pipelineWarningText"></p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <!-- Entrada de Documento de Licitación -->
+                <div class="col-12 col-lg-6 mb-4">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-header bg-none border-0 pt-3 pb-0">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h6 class="title mb-0"><i class="bi bi-file-text text-theme me-2"></i>Documento / Convocatoria</h6>
+                                <span class="badge bg-light text-dark border" id="activeModelBadge">Modelo: -</span>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-2 mb-3">
+                                <div class="col-6">
+                                    <label class="form-label small text-secondary mb-1">ID Licitación</label>
+                                    <input type="text" id="tenderIdInput" class="form-control form-control-sm" value="LA-009000999-E45-2026">
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label small text-secondary mb-1">ID Documento</label>
+                                    <input type="text" id="documentIdInput" class="form-control form-control-sm" value="CONVOCATORIA-01.pdf">
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label small text-secondary mb-1">Texto extraído del documento</label>
+                                <textarea id="tenderTextInput" class="form-control" rows="8">Licitación Pública Nacional LA-009000999-E45-2026 convocada por la Secretaría de Infraestructura y Comunicaciones para el Suministro e Instalación de Servidores de Cómputo de Alto Rendimiento.
+Presupuesto base estimado: $4,850,000.00 MXN (antes de IVA).
+Fecha límite para presentación de proposiciones: 2026-11-15.
+Requisitos obligatorios:
+1. Certificación ISO 9001 vigente.
+2. Carta de respaldo directo del fabricante.
+3. Garantía en sitio 24x7 por 36 meses.
+4. Capital contable mínimo del 20% del monto ofertado.</textarea>
+                            </div>
+
+                            <label class="form-label small fw-bold text-dark mb-2">Ejecutar Tarea:</label>
+                            <div class="d-flex flex-wrap gap-2 mb-3">
+                                <button type="button" class="btn btn-theme task-exec-btn" data-task="completar_campos">
+                                    <i class="bi bi-magic me-1"></i> Completar Campos (JSON)
+                                </button>
+                                <button type="button" class="btn btn-outline-primary task-exec-btn" data-task="resumen_licitacion">
+                                    <i class="bi bi-card-text me-1"></i> Resumen de Licitación
+                                </button>
+                                <button type="button" class="btn btn-outline-primary task-exec-btn" data-task="analisis">
+                                    <i class="bi bi-shield-check me-1"></i> Análisis de Pliegos
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary task-exec-btn" data-task="constructor_recetas">
+                                    <i class="bi bi-code-slash me-1"></i> Constructor de Recetas
+                                </button>
+                            </div>
+
+                            <hr class="my-3 opacity-25">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="small text-secondary">Procesamiento sin IA:</span>
+                                <button type="button" id="btnRunLocalPipeline" class="btn btn-sm btn-outline-success">
+                                    <i class="bi bi-cpu me-1"></i> Ejecutar Pipeline Local (Surya + Reglas)
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Resultado de la Ejecución -->
+                <div class="col-12 col-lg-6 mb-4">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-header bg-none border-0 pt-3 pb-0">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h6 class="title mb-0"><i class="bi bi-terminal text-theme me-2"></i>Resultado del Procesamiento</h6>
+                                <span id="execMetricsBadge" class="badge bg-light text-secondary border d-none"></span>
+                            </div>
+                        </div>
+                        <div class="card-body d-flex flex-column">
+                            <pre id="taskOutputPre" class="p-3 rounded bg-dark text-light small flex-grow-1 mb-0" style="min-height: 320px; max-height: 460px; overflow: auto;">Selecciona una acción a la izquierda para procesar la licitación.</pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer mt-auto">
+        <div class="container-fluid">
+            <div class="row">
+                <div class="col-12 py-2">
+                    <span class="text-secondary small">Scrapper — Plataforma de Licitaciones</span>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="assets/js/jquery-3.3.1.min.js"></script>
+    <script src="assets/js/popper.min.js"></script>
+    <script src="assets/vendor/bootstrap-5/dist/js/bootstrap.bundle.js"></script>
+    <script src="assets/js/main.js"></script>
+    <script src="assets/js/color-scheme.js"></script>
+    <script src="js/licitaciones.app.js"></script>
+</body>
+
+</html>

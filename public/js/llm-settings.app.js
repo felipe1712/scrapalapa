@@ -1,6 +1,5 @@
 /**
- * Scrapper Admin — Configuración -> Inteligencia artificial (Claude) (Fase 5c)
- * Cliente JS sobre plantilla Bootstrap 5 WinDOORS
+ * Scrapper — Configuración -> Inteligencia artificial (Claude)
  */
 (function () {
   'use strict';
@@ -15,17 +14,25 @@
     history: [],
     replacingKey: false,
     removeKeyRequested: false,
+    lastUsageData: null,
     charts: {
       byDay: null,
       byTask: null,
     },
   };
 
+  const TAB_HASH_MAP = {
+    '#conexion': '#tab-general',
+    '#perfiles': '#tab-profiles',
+    '#consumo': '#tab-usage',
+    '#historial': '#tab-history',
+  };
+
   function getAuthHeaders() {
     return {
       'Content-Type': 'application/json',
-      'x-user-role': state.role,
-      'x-user-name': state.role === 'admin' ? 'admin@scrapper.local' : 'operador@scrapper.local',
+      'x-user-role': 'admin',
+      'x-user-name': 'admin@scrapper.local',
     };
   }
 
@@ -41,23 +48,51 @@
   }
 
   /**
+   * Activa una pestaña por su selector de panel (#tab-general, #tab-profiles, #tab-usage, #tab-history)
+   * o por su hash (#conexion, #perfiles, #consumo, #historial) y actualiza el URL.
+   */
+  function activateTab(hashOrTarget, updateUrl = true) {
+    const targetPaneSelector = TAB_HASH_MAP[hashOrTarget] || hashOrTarget || '#tab-general';
+    const tabLinks = document.querySelectorAll('#llmAdminTabs .nav-link');
+    const tabPanes = document.querySelectorAll('#llmAdminTabsContent .tab-pane');
+
+    let matchedHash = '#conexion';
+    tabLinks.forEach((link) => {
+      const linkTarget = link.getAttribute('data-tab-target');
+      const linkHash = link.getAttribute('href');
+      if (linkTarget === targetPaneSelector || linkHash === hashOrTarget) {
+        link.classList.add('active');
+        link.setAttribute('aria-selected', 'true');
+        if (linkHash) matchedHash = linkHash;
+      } else {
+        link.classList.remove('active');
+        link.setAttribute('aria-selected', 'false');
+      }
+    });
+
+    tabPanes.forEach((pane) => {
+      if ('#' + pane.id === targetPaneSelector) {
+        pane.classList.add('show', 'active');
+      } else {
+        pane.classList.remove('show', 'active');
+      }
+    });
+
+    if (updateUrl && window.location.hash !== matchedHash) {
+      history.replaceState(null, '', matchedHash);
+    }
+
+    if (targetPaneSelector === '#tab-usage') {
+      loadUsageAnalytics();
+    }
+  }
+
+  /**
    * Carga toda la configuración desde GET /api/settings/llm y GET /api/llm/status
    */
   async function loadAllSettings() {
     try {
       const res = await fetch('/api/settings/llm', { headers: getAuthHeaders() });
-      if (res.status === 403) {
-        const errData = await res.json().catch(() => ({}));
-        document.getElementById('nonAdminAlert')?.classList.remove('d-none');
-        const txt = document.getElementById('nonAdminAlertText');
-        if (txt && errData.message) txt.textContent = errData.message;
-        toggleAdminControlsDisabled(true);
-        return;
-      }
-
-      document.getElementById('nonAdminAlert')?.classList.add('d-none');
-      toggleAdminControlsDisabled(false);
-
       const data = await res.json();
       if (!data.ok) {
         showGlobalFeedback(data.message || 'Error al cargar configuración.', 'danger');
@@ -74,7 +109,7 @@
       state.budget = data.budget || null;
       state.history = data.history || [];
 
-      renderHeaderAndSidebar(data);
+      renderSidebarStatus();
       renderGeneralForm();
       renderBudgetSection();
       renderTaskProfilesTable();
@@ -88,29 +123,13 @@
     }
   }
 
-  function toggleAdminControlsDisabled(disabled) {
-    const form = document.getElementById('llmSettingsForm');
-    if (!form) return;
-    form.querySelectorAll('input, select, button, textarea').forEach((el) => {
-      el.disabled = disabled;
-    });
-  }
-
-  function renderHeaderAndSidebar(data) {
+  function renderSidebarStatus() {
     const s = state.settings;
-    const verEl = document.getElementById('headerConfigVersion');
-    if (verEl) verEl.textContent = `v${s.version}`;
-
-    const notifyEl = document.getElementById('sidebarNotifyCount');
-    if (notifyEl && data.cache_meta) {
-      notifyEl.textContent = String(data.cache_meta.invalidation_count || 0);
-    }
-
     const sidebarBadge = document.getElementById('sidebarLlmStatusBadge');
-    if (sidebarBadge) {
+    if (sidebarBadge && s) {
       if (s.activo && s.has_api_key) {
         sidebarBadge.className = 'badge bg-success';
-        sidebarBadge.textContent = 'Activo (Claude)';
+        sidebarBadge.textContent = 'Activo';
       } else if (!s.activo) {
         sidebarBadge.className = 'badge bg-secondary';
         sidebarBadge.textContent = 'Deshabilitado';
@@ -125,11 +144,9 @@
     const s = state.settings;
     if (!s) return;
 
-    // Interruptor general
     const switchEl = document.getElementById('llmActivoSwitch');
     if (switchEl) switchEl.checked = Boolean(s.activo);
 
-    // Estado de Clave de API (enmascarada sk-ant-…XXXX vs campo password)
     const savedKeyContainer = document.getElementById('savedKeyContainer');
     const newKeyInputWrapper = document.getElementById('newKeyInputWrapper');
     const maskedDisplay = document.getElementById('maskedApiKeyDisplay');
@@ -151,7 +168,6 @@
       btnCancelReplace?.classList.add('d-none');
     }
 
-    // Selector de modelo por defecto alimentado desde llm_models
     const modelSelect = document.getElementById('defaultModelSelect');
     if (modelSelect) {
       modelSelect.innerHTML = '';
@@ -165,7 +181,6 @@
       });
     }
 
-    // max_tokens y sincronización con límite del modelo
     const maxTokensInput = document.getElementById('maxTokensInput');
     const maxTokensSlider = document.getElementById('maxTokensSlider');
     if (maxTokensInput) maxTokensInput.value = String(s.max_tokens);
@@ -173,7 +188,6 @@
 
     updateSelectedModelSpecsAndMaxTokensBounds();
 
-    // Parámetros avanzados
     const setVal = (id, val) => {
       const el = document.getElementById(id);
       if (el) el.value = val === null || val === undefined ? '' : String(val);
@@ -187,7 +201,6 @@
     setVal('anthropicVersionInput', s.anthropic_version);
     setVal('apiBaseUrlInput', s.api_base_url);
 
-    // Presupuesto
     setVal('limiteTokensDiarioInput', s.limite_tokens_diario);
     setVal('limiteCostoMensualInput', s.limite_costo_mensual);
     setVal('accionLimiteSelect', s.accion_limite || 'avisar');
@@ -232,7 +245,7 @@
         msgEl.textContent = `Excede el máximo del modelo (${limit.toLocaleString()} tokens)`;
       } else {
         msgEl.className = 'text-success fw-medium';
-        msgEl.textContent = `Válido (${currentVal.toLocaleString()} / ${limit.toLocaleString()} tokens)`;
+        msgEl.textContent = `${currentVal.toLocaleString()} / ${limit.toLocaleString()} tokens`;
       }
     }
   }
@@ -279,7 +292,7 @@
       tr.dataset.tarea = p.tarea;
 
       const modelOptions = [
-        `<option value="">-- Heredar default (${s?.default_model || ''}) --</option>`,
+        `<option value="">-- Heredar por defecto (${s?.default_model || ''}) --</option>`,
         ...state.models
           .filter((m) => m.disponible || m.model_id === p.model)
           .map(
@@ -290,8 +303,8 @@
 
       tr.innerHTML = `
         <td>
-          <div class="fw-bold text-dark"><code>${p.tarea}</code></div>
-          <div class="small text-secondary">${p.nombre_tarea || ''}</div>
+          <div class="fw-bold text-dark">${p.nombre_tarea || p.tarea}</div>
+          <div class="small text-secondary"><code>${p.tarea}</code></div>
         </td>
         <td>
           <select class="form-select form-select-sm profile-model-select">${modelOptions}</select>
@@ -377,7 +390,7 @@
       tr.innerHTML = `
         <td class="text-nowrap">${fechaStr}</td>
         <td><span class="badge bg-light text-dark border">${h.usuario}</span></td>
-        <td><code>${h.entidad}</code> · <strong>${h.accion}</strong></td>
+        <td><strong>${h.accion}</strong></td>
         <td class="text-center">${h.version_resultante ? 'v' + h.version_resultante : '-'}</td>
         <td><code class="small text-break">${diffStr}</code></td>
       `;
@@ -385,10 +398,6 @@
     });
   }
 
-  /**
-   * Regla: Si no hay clave válida o el LLM está deshabilitado, todas las funciones dependientes
-   * se ocultan o desactivan con un aviso, y el pipeline local (Surya + reglas) sigue funcionando.
-   */
   async function refreshGlobalLlmStatus() {
     try {
       const res = await fetch('/api/llm/status');
@@ -396,47 +405,20 @@
 
       const fallbackBanner = document.getElementById('llmFallbackBanner');
       const fallbackText = document.getElementById('llmFallbackBannerText');
-      const depBadge = document.getElementById('dependentActionsStatusBadge');
-      const depWarn = document.getElementById('dependentActionsWarning');
-      const depButtons = document.querySelectorAll('.llm-dependent-btn');
 
       if (!status.ready) {
         fallbackBanner?.classList.remove('d-none');
         if (fallbackText && status.warning_message) {
           fallbackText.textContent = status.warning_message;
         }
-        if (depBadge) {
-          depBadge.className = 'badge bg-warning text-dark';
-          depBadge.textContent = 'Desactivadas (Fallback Local Surya Activo)';
-        }
-        if (depWarn) {
-          depWarn.classList.remove('d-none');
-          depWarn.textContent = status.warning_message || 'LLM no disponible.';
-        }
-        depButtons.forEach((btn) => {
-          btn.disabled = true;
-          btn.classList.add('opacity-50');
-        });
       } else {
         fallbackBanner?.classList.add('d-none');
-        if (depBadge) {
-          depBadge.className = 'badge bg-success';
-          depBadge.textContent = `Habilitadas (${status.default_model})`;
-        }
-        depWarn?.classList.add('d-none');
-        depButtons.forEach((btn) => {
-          btn.disabled = false;
-          btn.classList.remove('opacity-50');
-        });
       }
     } catch {
       // ignore
     }
   }
 
-  /**
-   * Carga analítica de consumo para gráficas Chart.js y tablas
-   */
   async function loadUsageAnalytics() {
     try {
       const taskFilter = document.getElementById('usageFilterTask')?.value || 'all';
@@ -447,6 +429,7 @@
       const data = await res.json();
       if (!data.ok) return;
 
+      state.lastUsageData = data;
       renderUsageTables(data);
       renderUsageCharts(data);
     } catch {
@@ -521,7 +504,7 @@
           <td><small class="text-secondary">${r.tender_id || '-'} ${r.document_id ? '/ ' + r.document_id : ''}</small></td>
         </tr>`
           )
-          .join('') || `<tr><td colspan="8" class="text-center text-secondary py-3">Aún no hay llamadas registradas en llm_usage.</td></tr>`;
+          .join('') || `<tr><td colspan="8" class="text-center text-secondary py-3">Aún no hay llamadas registradas.</td></tr>`;
     }
   }
 
@@ -581,15 +564,26 @@
     }
   }
 
-  /**
-   * Vincula todos los eventos de la interfaz
-   */
   function bindEvents() {
-    // Simulador de Rol (Admin vs Operador)
-    document.getElementById('roleSimulatorSelect')?.addEventListener('change', (e) => {
-      state.role = e.target.value;
-      loadAllSettings();
+    // Navegación directa de Pestañas (soporta clic en ícono o texto y cambia el hash del URL)
+    document.querySelectorAll('#llmAdminTabs .nav-link').forEach((tabLink) => {
+      tabLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        const hash = tabLink.getAttribute('href') || '#conexion';
+        activateTab(hash, true);
+      });
     });
+
+    window.addEventListener('hashchange', () => {
+      if (window.location.hash && TAB_HASH_MAP[window.location.hash]) {
+        activateTab(window.location.hash, false);
+      }
+    });
+
+    // Activar pestaña inicial si el URL trae hash (#perfiles, #consumo, #historial)
+    if (window.location.hash && TAB_HASH_MAP[window.location.hash]) {
+      activateTab(window.location.hash, false);
+    }
 
     // Cambio en el selector de modelo por defecto -> actualiza specs y máximo del slider max_tokens
     document.getElementById('defaultModelSelect')?.addEventListener('change', () => {
@@ -644,7 +638,7 @@
     // Guardar formulario general (PUT /api/settings/llm)
     document.getElementById('llmSettingsForm')?.addEventListener('submit', saveGeneralSettings);
 
-    // Interruptor general LLM_ENABLED guarda directamente al conmutar
+    // Interruptor general guarda directamente al conmutar
     document.getElementById('llmActivoSwitch')?.addEventListener('change', () => {
       saveGeneralSettings(new Event('submit'));
     });
@@ -668,29 +662,6 @@
     document.getElementById('btnExportCsv')?.addEventListener('click', () => {
       const taskFilter = document.getElementById('usageFilterTask')?.value || 'all';
       window.location.href = `/api/settings/llm/usage?format=csv&tarea=${encodeURIComponent(taskFilter)}`;
-    });
-
-    // Verificador en vivo de Hot-Reload y Pipeline Local (Pestaña 4)
-    document.getElementById('btnCheckEffectiveNextCall')?.addEventListener('click', async () => {
-      const out = document.getElementById('pipelineInspectorOutput');
-      if (!out) return;
-      const res = await fetch('/api/llm/effective-config/completar_campos');
-      const data = await res.json();
-      out.textContent = JSON.stringify(data, null, 2);
-    });
-
-    document.getElementById('btnRunPipelineFallbackDemo')?.addEventListener('click', async () => {
-      const out = document.getElementById('pipelineInspectorOutput');
-      if (!out) return;
-      out.textContent = 'Ejecutando tarea en pipeline...';
-      const res = await fetch('/api/llm/execute-task', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tarea: 'completar_campos' }),
-      });
-      const data = await res.json();
-      out.textContent = JSON.stringify(data, null, 2);
-      await loadUsageAnalytics();
     });
   }
 
@@ -731,7 +702,7 @@
         return;
       }
 
-      showGlobalFeedback(data.message || 'Configuración guardada y aplicada en memoria.', 'success');
+      showGlobalFeedback('Configuración guardada correctamente.', 'success');
       await loadAllSettings();
     } catch (err) {
       showGlobalFeedback('Error al guardar configuración: ' + err.message, 'danger');
@@ -774,10 +745,10 @@
 
       if (data.ok) {
         box?.classList.add('border-success', 'bg-light');
-        if (title) title.textContent = 'Conexión Verificada con Anthropic';
+        if (title) title.textContent = 'Conexión Verificada';
         if (badge) {
           badge.className = 'badge bg-success';
-          badge.textContent = '200 OK';
+          badge.textContent = 'OK';
         }
         if (msg) msg.textContent = data.message;
         metrics?.classList.remove('d-none');
@@ -786,7 +757,7 @@
         document.getElementById('testMetricTokens').textContent = `${data.usage?.total_tokens || 0} tok`;
       } else {
         box?.classList.add('border-danger', 'bg-light');
-        if (title) title.textContent = 'Fallo en la Prueba de Conexión';
+        if (title) title.textContent = 'Error en la Prueba de Conexión';
         if (badge) {
           badge.className = 'badge bg-danger';
           badge.textContent = data.error_code || 'ERROR';
@@ -820,7 +791,7 @@
         showGlobalFeedback(data.message, 'success');
         await loadAllSettings();
       } else {
-        showGlobalFeedback(data.message || 'No se pudo sincronizar desde GET /v1/models.', 'warning');
+        showGlobalFeedback(data.message || 'No se pudo sincronizar el catálogo.', 'warning');
       }
     } catch (err) {
       showGlobalFeedback('Error al sincronizar modelos: ' + err.message, 'danger');
