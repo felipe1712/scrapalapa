@@ -237,22 +237,32 @@ function analyzeHtmlWithKeywords(
     norm: normalizeForSearch(kw),
   }));
 
-  // Dividir el HTML en bloques lógicos de licitaciones: filas <tr>, items <li>, <article>, tarjetas <div>
-  const blockRegex = /<(tr|article|li|section)\b[^>]*>([\s\S]*?)<\/\1>/gi;
+  // Segmentación exhaustiva del DOM:
+  // Divide por filas de tabla (<tr>), encabezados de licitación (<h1>..<h4>) y contenedores (<article>),
+  // de modo que recorra absolutamente todas las licitaciones de la URL (tablas, tarjetas Elementor, listas).
+  const rawChunks: string[] = [];
+
+  const trMatches = cleanHtmlForBlocks.match(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi);
+  if (trMatches && trMatches.length > 0) {
+    rawChunks.push(...trMatches);
+  }
+
+  const structuralParts = cleanHtmlForBlocks.split(/(?=<(?:tr|h1|h2|h3|h4|article)\b[^>]*>)/i);
+  if (structuralParts.length > 1) {
+    rawChunks.push(...structuralParts);
+  }
+
   const matchedAttachmentsPriority: DiscoveredAttachment[] = [];
   const seenSnippets = new Set<string>();
   const seenDetailUrls = new Set<string>();
 
-  let blockMatch: RegExpExecArray | null;
-  while ((blockMatch = blockRegex.exec(cleanHtmlForBlocks)) !== null) {
-    const blockHtml = blockMatch[0];
+  for (const blockHtml of rawChunks) {
     const blockPlain = blockHtml
       .replace(/<[^>]+>/g, ' ')
       .replace(/&nbsp;/gi, ' ')
       .replace(/\s+/g, ' ')
       .trim();
 
-    // Evitar bloques vacíos o contenedores gigantes que abarcan toda la página
     if (blockPlain.length < 15 || blockPlain.length > 3500) continue;
 
     const normBlock = normalizeForSearch(blockPlain);
@@ -261,8 +271,8 @@ function analyzeHtmlWithKeywords(
       .map((k) => k.original);
 
     if (matchedKws.length > 0) {
-      const snippet = blockPlain.slice(0, 320);
-      const snippetKey = normalizeForSearch(snippet.slice(0, 120));
+      const snippet = blockPlain.slice(0, 340);
+      const snippetKey = normalizeForSearch(snippet.slice(0, 140));
       if (seenSnippets.has(snippetKey)) continue;
       seenSnippets.add(snippetKey);
 
@@ -270,29 +280,32 @@ function analyzeHtmlWithKeywords(
       const docUrls: string[] = [];
 
       for (const d of docs) {
-        docUrls.push(d.url);
+        if (!docUrls.includes(d.url)) {
+          docUrls.push(d.url);
+        }
         matchedAttachmentsPriority.push({
           ...d,
           matchedKeyword: matchedKws.join(', '),
-          fromHitContext: snippet.slice(0, 140),
+          fromHitContext: snippet.slice(0, 160),
         });
       }
 
-      const bestDetailLink = detailLinks[0]?.url;
-      if (bestDetailLink && !seenDetailUrls.has(bestDetailLink)) {
-        seenDetailUrls.add(bestDetailLink);
-        candidateDetailUrls.push({
-          url: bestDetailLink,
-          matchedKeywords: matchedKws,
-          snippet,
-        });
+      for (const dl of detailLinks) {
+        if (!seenDetailUrls.has(dl.url)) {
+          seenDetailUrls.add(dl.url);
+          candidateDetailUrls.push({
+            url: dl.url,
+            matchedKeywords: matchedKws,
+            snippet,
+          });
+        }
       }
 
       keywordHits.push({
         matchedKeywords: matchedKws,
         contextSnippet: snippet,
         sourceUrl: baseUrl,
-        detailUrl: bestDetailLink,
+        detailUrl: detailLinks[0]?.url,
         documentUrls: docUrls,
       });
     }
@@ -461,13 +474,12 @@ export class LightpandaService {
           }
         }
 
-        // Si hubo "Hits" de palabras clave pero el documento PDF/Word está dentro del enlace de detalle del Hit,
-        // Lightpanda entra automáticamente a las subpáginas de los Hits (hasta 3) para traer sus documentos PDF/Word
+        // Si hubo "Hits" de palabras clave con enlaces a subpáginas de detalle,
+        // Lightpanda entra a las subpáginas de los Hits (hasta 6) para traer todos los documentos PDF/Word asociados
         const extraTexts: string[] = [];
-        const hitDocsCount = parsed.attachments.filter((a) => Boolean(a.matchedKeyword)).length;
 
-        if (keywords.length > 0 && parsed.candidateDetailUrls.length > 0 && hitDocsCount === 0) {
-          for (const candidate of parsed.candidateDetailUrls.slice(0, 3)) {
+        if (keywords.length > 0 && parsed.candidateDetailUrls.length > 0) {
+          for (const candidate of parsed.candidateDetailUrls.slice(0, 6)) {
             try {
               await page.goto(candidate.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
               const subUrl = page.url() || candidate.url;
@@ -567,11 +579,10 @@ export class LightpandaService {
           if (stdout && stdout.trim().length > 0) {
             const parsed = analyzeHtmlWithKeywords(stdout, targetUrl, keywords);
 
-            // Si hubo Hits con enlaces a páginas de detalle y sin PDF directo, seguir hasta 3 páginas de detalle con Lightpanda CLI
+            // Si hubo Hits con enlaces a páginas de detalle, seguir hasta 6 páginas de detalle con Lightpanda CLI
             const extraTexts: string[] = [];
-            const hitDocsCount = parsed.attachments.filter((a) => Boolean(a.matchedKeyword)).length;
-            if (keywords.length > 0 && parsed.candidateDetailUrls.length > 0 && hitDocsCount === 0) {
-              for (const candidate of parsed.candidateDetailUrls.slice(0, 3)) {
+            if (keywords.length > 0 && parsed.candidateDetailUrls.length > 0) {
+              for (const candidate of parsed.candidateDetailUrls.slice(0, 6)) {
                 try {
                   const subOut = await execFileAsync(bin, ['fetch', '--dump', 'html', candidate.url], {
                     timeout: 20000,
@@ -678,11 +689,10 @@ export class LightpandaService {
     const html = await res.text();
     const parsed = analyzeHtmlWithKeywords(html, finalUrl, keywords);
 
-    // Seguir subpáginas de Hits si no había link directo al PDF en la tabla principal
+    // Seguir subpáginas de Hits para recolectar todos los documentos de licitación
     const extraTexts: string[] = [];
-    const hitDocsCount = parsed.attachments.filter((a) => Boolean(a.matchedKeyword)).length;
-    if (keywords.length > 0 && parsed.candidateDetailUrls.length > 0 && hitDocsCount === 0) {
-      for (const candidate of parsed.candidateDetailUrls.slice(0, 3)) {
+    if (keywords.length > 0 && parsed.candidateDetailUrls.length > 0) {
+      for (const candidate of parsed.candidateDetailUrls.slice(0, 6)) {
         try {
           const subRes = await fetch(candidate.url, {
             redirect: 'follow',

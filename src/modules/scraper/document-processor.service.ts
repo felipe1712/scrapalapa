@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import mammoth from 'mammoth';
+import { claudeService } from '../llm/claude.service.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -13,14 +14,20 @@ export interface ProcessedDocumentResult {
   fileType: 'pdf' | 'docx' | 'doc';
   fileSizeBytes: number;
   localPath: string;
-  extractionMethod: 'surya_ocr' | 'surya_hybrid_pdf' | 'pdf_text_parser' | 'word_mammoth';
+  extractionMethod:
+    | 'surya_ocr'
+    | 'tesseract_ocr'
+    | 'vision_ocr'
+    | 'surya_hybrid_pdf'
+    | 'pdf_text_parser'
+    | 'word_mammoth';
   pagesProcessed: number;
   extractedText: string;
 }
 
 /**
  * Descarga un archivo PDF o Word (.docx / .doc) desde una URL, lo almacena en ./data/documents
- * y lo procesa con Surya OCR (para PDF) o Mammoth (para Word).
+ * y lo procesa con OCR de imagen (Tesseract / Surya / Vision OCR) para PDFs escaneados o Mammoth para Word.
  */
 export class DocumentProcessorService {
   private docsDir = path.resolve(process.cwd(), 'data', 'documents');
@@ -60,7 +67,6 @@ export class DocumentProcessorService {
     const arrayBuffer = await res.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Detectar tipo real por firma de bytes (magic bytes) o Content-Type en caso de enlaces dinámicos (/descargar?id=...)
     let resolvedType: 'pdf' | 'docx' | 'doc' = fileType;
     const ctHeader = (res.headers.get('content-type') || '').toLowerCase();
     if (buffer.length >= 4 && buffer.subarray(0, 4).toString('ascii') === '%PDF') {
@@ -75,7 +81,6 @@ export class DocumentProcessorService {
       resolvedType = 'docx';
     }
 
-    // Extraer nombre de archivo desde Content-Disposition si existe
     const disposition = res.headers.get('content-disposition') || '';
     const dispMatch = disposition.match(/filename\*?=(?:UTF-8'')?["']?([^"';\r\n]+)["']?/i);
     const rawName = dispMatch
@@ -93,7 +98,7 @@ export class DocumentProcessorService {
       return this.processWordDocument(localPath, rawName, fileUrl, resolvedType, buffer.length);
     }
 
-    return this.processPdfWithSurya(localPath, rawName, fileUrl, buffer, ocrMode);
+    return this.processPdfWithOcr(localPath, rawName, fileUrl, buffer, ocrMode);
   }
 
   private async processWordDocument(
@@ -130,20 +135,25 @@ export class DocumentProcessorService {
     }
   }
 
-  private async processPdfWithSurya(
+  private async processPdfWithOcr(
     localPath: string,
     fileName: string,
     sourceUrl: string,
     buffer: Buffer,
     ocrMode: 'auto' | 'forzar_surya'
   ): Promise<ProcessedDocumentResult> {
-    // 1. Intentar primero el puente Python de Surya OCR (scripts/surya_extract.py)
     const pythonCandidates = [
       process.env.SURYA_PYTHON_BIN || process.env.SURYA_PYTHON_PATH || '/var/www/scrapalapa/.venv-surya/bin/python',
       'python3',
       'python',
     ];
 
+    let renderedPagesB64: Array<{ page: number; media_type: 'image/jpeg'; data: string }> = [];
+    let detectedPages = 1;
+    let localExtractedText = '';
+    let localMethod: ProcessedDocumentResult['extractionMethod'] = 'surya_hybrid_pdf';
+
+    // 1. Ejecutar puente Python (pypdfium2 + Tesseract OCR + Surya OCR + renderizado de imágenes JPEG para PDFs escaneados)
     for (const pyBin of pythonCandidates) {
       try {
         const { stdout } = await execFileAsync(
@@ -151,32 +161,73 @@ export class DocumentProcessorService {
           [this.suryaScriptPath, localPath, '--mode', ocrMode],
           {
             timeout: 180000,
-            maxBuffer: 25 * 1024 * 1024,
+            maxBuffer: 35 * 1024 * 1024,
           }
         );
         const parsed = JSON.parse(stdout.trim());
-        if (parsed && parsed.ok && parsed.text && parsed.text.length > 0) {
-          return {
-            fileName,
-            sourceUrl,
-            fileType: 'pdf',
-            fileSizeBytes: buffer.length,
-            localPath,
-            extractionMethod: parsed.method === 'surya_ocr' ? 'surya_ocr' : 'surya_hybrid_pdf',
-            pagesProcessed: Number(parsed.pages || 1),
-            extractedText: parsed.text,
-          };
+        if (parsed && parsed.ok) {
+          detectedPages = Number(parsed.pages || 1);
+          if (Array.isArray(parsed.rendered_pages_b64) && parsed.rendered_pages_b64.length > 0) {
+            renderedPagesB64 = parsed.rendered_pages_b64;
+          }
+          if (parsed.text && parsed.text.trim().length > 0) {
+            localExtractedText = parsed.text.trim();
+            localMethod =
+              parsed.method === 'tesseract_ocr'
+                ? 'tesseract_ocr'
+                : parsed.method === 'surya_ocr'
+                  ? 'surya_ocr'
+                  : 'surya_hybrid_pdf';
+          }
+          break;
         }
       } catch {
-        // Si el binario de Python/Surya no está disponible en este candidato, probar el siguiente o usar parser Node
+        // Probar siguiente binario de Python
       }
     }
 
-    // 2. Fallback en Node.js con pdf-parse para extracción directa de PDF
+    // 2. Si el PDF está conformado por imágenes escaneadas (renderedPagesB64 > 0 o localExtractedText < 300 chars),
+    // realizar OCR de imagen de alta precisión (Vision OCR sobre las páginas renderizadas)
+    if (renderedPagesB64.length > 0 || localExtractedText.length < 300) {
+      const visionOcrText = await claudeService.extractTextFromScannedImages({
+        renderedPages: renderedPagesB64,
+        pdfBufferFallback: buffer,
+        fileName,
+      });
+
+      if (visionOcrText && visionOcrText.length > localExtractedText.length) {
+        return {
+          fileName,
+          sourceUrl,
+          fileType: 'pdf',
+          fileSizeBytes: buffer.length,
+          localPath,
+          extractionMethod: 'vision_ocr',
+          pagesProcessed: detectedPages,
+          extractedText: visionOcrText,
+        };
+      }
+    }
+
+    if (localExtractedText.length > 0) {
+      return {
+        fileName,
+        sourceUrl,
+        fileType: 'pdf',
+        fileSizeBytes: buffer.length,
+        localPath,
+        extractionMethod: localMethod,
+        pagesProcessed: detectedPages,
+        extractedText: localExtractedText,
+      };
+    }
+
+    // 3. Fallback en Node.js con pdf-parse para PDFs con capa de texto cuando Python no está disponible
     try {
       const pdfParseModule: any = await import('pdf-parse');
       const pdfParse = pdfParseModule.default || pdfParseModule;
       const data = await pdfParse(buffer);
+      const parsedText = (data.text || '').trim();
       return {
         fileName,
         sourceUrl,
@@ -184,8 +235,8 @@ export class DocumentProcessorService {
         fileSizeBytes: buffer.length,
         localPath,
         extractionMethod: 'pdf_text_parser',
-        pagesProcessed: Number(data.numpages || 1),
-        extractedText: (data.text || '').trim(),
+        pagesProcessed: Number(data.numpages || detectedPages || 1),
+        extractedText: parsedText,
       };
     } catch (err: any) {
       return {
@@ -195,8 +246,8 @@ export class DocumentProcessorService {
         fileSizeBytes: buffer.length,
         localPath,
         extractionMethod: 'pdf_text_parser',
-        pagesProcessed: 1,
-        extractedText: `[No se pudo extraer texto del PDF (${err?.message || err}). Instala Surya OCR en el servidor para OCR de imágenes.]`,
+        pagesProcessed: detectedPages,
+        extractedText: '',
       };
     }
   }

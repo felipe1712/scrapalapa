@@ -8,6 +8,7 @@
     currentTender: null,
     currentDocuments: [],
     activeViewerDocId: null,
+    viewerOpen: false,
     tendersList: [],
   };
 
@@ -157,7 +158,8 @@
 
       state.currentTender = data.tender;
       state.currentDocuments = data.documents || [];
-      state.activeViewerDocId = state.currentDocuments[0]?.id || null;
+      state.activeViewerDocId = null;
+      state.viewerOpen = false;
       renderActiveTender();
       if (switchToSynthesis) {
         activateTab('#sintesis');
@@ -165,6 +167,17 @@
     } catch {
       // ignore
     }
+  }
+
+  function closeInlinePdfViewer() {
+    state.viewerOpen = false;
+    state.activeViewerDocId = null;
+    const viewerCard = document.getElementById('inlinePdfViewerCard');
+    if (viewerCard) viewerCard.classList.add('d-none');
+    document.querySelectorAll('.btn-select-viewer-doc').forEach((btn) => {
+      btn.classList.remove('btn-theme');
+      btn.classList.add('btn-outline-primary');
+    });
   }
 
   function renderInlinePdfViewer(docId) {
@@ -179,11 +192,17 @@
 
     const doc = state.currentDocuments.find((d) => d.id === Number(docId)) || state.currentDocuments[0];
     if (!doc) {
-      viewerCard.classList.add('d-none');
-      viewerFrame.src = 'about:blank';
+      closeInlinePdfViewer();
       return;
     }
 
+    // Si ya está abierto el mismo documento, alternar (ocultar)
+    if (state.viewerOpen && state.activeViewerDocId === doc.id) {
+      closeInlinePdfViewer();
+      return;
+    }
+
+    state.viewerOpen = true;
     state.activeViewerDocId = doc.id;
     viewerCard.classList.remove('d-none');
 
@@ -205,7 +224,6 @@
       viewerFrame.src = inlineUrl;
     }
 
-    // Actualizar estado activo de los botones de selección de documento
     document.querySelectorAll('.btn-select-viewer-doc').forEach((btn) => {
       const btnId = Number(btn.getAttribute('data-doc-id'));
       if (btnId === doc.id) {
@@ -216,6 +234,8 @@
         btn.classList.add('btn-outline-primary');
       }
     });
+
+    viewerCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
   function renderActiveTender() {
@@ -225,7 +245,12 @@
     document.getElementById('emptySynthesisState')?.classList.add('d-none');
     document.getElementById('activeTenderContainer')?.classList.remove('d-none');
 
-    // Renderizar Hits de Palabras Clave y listado de documentos encontrados
+    // Ocultar el visor PDF in-situ por defecto hasta que el usuario haga clic en un enlace de documento
+    if (!state.viewerOpen) {
+      document.getElementById('inlinePdfViewerCard')?.classList.add('d-none');
+    }
+
+    // Renderizar sección "Resultados"
     const hitsCard = document.getElementById('keywordHitsCard');
     const kwSummary = document.getElementById('keywordsSearchedSummary');
     const hitsListEl = document.getElementById('keywordHitsList');
@@ -237,13 +262,13 @@
         hitsCard.classList.remove('d-none');
         if (kwSummary) {
           kwSummary.innerHTML = t.keywords_buscadas
-            ? `Palabras buscadas: <strong>${t.keywords_buscadas}</strong> · <strong>${hits.length}</strong> coincidencia(s) ("hits") · <strong>${state.currentDocuments.length}</strong> documento(s) encontrado(s)`
+            ? `Palabras buscadas: <strong>${t.keywords_buscadas}</strong> · <strong>${hits.length}</strong> coincidencia(s) · <strong>${state.currentDocuments.length}</strong> documento(s) encontrado(s)`
             : `<strong>${state.currentDocuments.length}</strong> documento(s) encontrado(s)`;
         }
         if (quickDocsEl) {
           quickDocsEl.innerHTML = state.currentDocuments
-            .map((d, idx) => {
-              const isSelected = state.activeViewerDocId ? d.id === state.activeViewerDocId : idx === 0;
+            .map((d) => {
+              const isSelected = state.viewerOpen && d.id === state.activeViewerDocId;
               return `<button type="button" class="btn btn-sm ${
                 isSelected ? 'btn-theme' : 'btn-outline-primary'
               } btn-select-viewer-doc" data-doc-id="${d.id}">
@@ -251,23 +276,38 @@
               </button>`;
             })
             .join('');
-
-          quickDocsEl.querySelectorAll('.btn-select-viewer-doc').forEach((btn) => {
-            btn.addEventListener('click', () => {
-              renderInlinePdfViewer(Number(btn.getAttribute('data-doc-id')));
-            });
-          });
         }
         if (hitsListEl) {
           if (hits.length > 0) {
             hitsListEl.innerHTML = hits
-              .slice(0, 8)
+              .slice(0, 50)
               .map((h) => {
                 const badges = (h.matchedKeywords || [])
-                  .map((kw) => `<span class="badge bg-success me-1">Hit: ${kw}</span>`)
+                  .map((kw) => `<span class="badge bg-success me-1">${kw}</span>`)
                   .join('');
+
+                // Asociar cada resultado con su documento descargado en nuestro portal para abrir el visor con 1 clic
+                const matchedDocs = state.currentDocuments.filter((d) =>
+                  Array.isArray(h.documentUrls) && h.documentUrls.length > 0
+                    ? h.documentUrls.includes(d.source_url)
+                    : true
+                );
+                const docsToShow = matchedDocs.length > 0 ? matchedDocs : state.currentDocuments.slice(0, 1);
+
+                const docLinksHtml = docsToShow
+                  .map(
+                    (d) =>
+                      `<a href="#" class="small fw-medium text-theme text-decoration-none ms-2 btn-inline-doc-link" data-doc-id="${d.id}">
+                        <i class="bi bi-file-earmark-pdf-fill text-danger me-1"></i>Ver documento (${d.file_name})
+                      </a>`
+                  )
+                  .join('');
+
                 return `<div class="list-group-item px-0 py-2">
-                  <div class="mb-1">${badges}</div>
+                  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-1">
+                    <div>${badges}</div>
+                    <div>${docLinksHtml}</div>
+                  </div>
                   <div class="text-dark">${h.contextSnippet || ''}</div>
                 </div>`;
               })
@@ -280,16 +320,17 @@
             hitsListEl.innerHTML = '';
           }
         }
+
+        // Enlazar todos los botones y enlaces internos de documentos para desplegar el visor PDF in-situ
+        hitsCard.querySelectorAll('.btn-select-viewer-doc, .btn-inline-doc-link').forEach((el) => {
+          el.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            renderInlinePdfViewer(Number(el.getAttribute('data-doc-id')));
+          });
+        });
       } else {
         hitsCard.classList.add('d-none');
       }
-    }
-
-    // Mostrar Visor PDF In-Situ abajo del listado de documentos encontrados
-    if (state.currentDocuments.length > 0) {
-      renderInlinePdfViewer(state.activeViewerDocId || state.currentDocuments[0].id);
-    } else {
-      document.getElementById('inlinePdfViewerCard')?.classList.add('d-none');
     }
 
     document.getElementById('activeTenderTitle').textContent = t.titulo || 'Licitación';
@@ -411,7 +452,8 @@
 
       state.currentTender = data.tender;
       state.currentDocuments = data.documents || [];
-      state.activeViewerDocId = state.currentDocuments[0]?.id || null;
+      state.activeViewerDocId = null;
+      state.viewerOpen = false;
       renderActiveTender();
       activateTab('#sintesis');
       await loadTendersHistory();
@@ -464,6 +506,7 @@
 
     document.getElementById('ingestUrlForm')?.addEventListener('submit', handleIngestSubmit);
     document.getElementById('btnRefreshTenders')?.addEventListener('click', loadTendersHistory);
+    document.getElementById('btnCloseInlineViewer')?.addEventListener('click', closeInlinePdfViewer);
 
     const authSwitch = document.getElementById('requiresAuthSwitch');
     const authBox = document.getElementById('authCredentialsBox');

@@ -288,13 +288,13 @@
                     </div>
 
                     <div id="activeTenderContainer" class="d-none">
-                        <!-- Listado de Hits de Palabras Clave y Documentos Encontrados -->
+                        <!-- Sección de Resultados -->
                         <div id="keywordHitsCard" class="card border-0 shadow-sm mb-4 d-none">
                             <div class="card-body p-3">
                                 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
                                     <div>
                                         <h6 class="mb-0 text-dark">
-                                            <i class="bi bi-bullseye text-theme me-1"></i> Coincidencias ("Hits") y Documentos Encontrados
+                                            <i class="bi bi-list-check text-theme me-1"></i> Resultados
                                         </h6>
                                         <small class="text-secondary" id="keywordsSearchedSummary"></small>
                                     </div>
@@ -304,7 +304,7 @@
                             </div>
                         </div>
 
-                        <!-- VISOR PDF IN-SITU (ABAJO DEL LISTADO DE DOCUMENTOS ENCONTRADOS) -->
+                        <!-- VISOR PDF IN-SITU (OCULTO POR DEFECTO, SE DESPLIEGA AL DAR CLIC EN EL ENLACE DEL DOCUMENTO) -->
                         <div id="inlinePdfViewerCard" class="card border-0 shadow-sm mb-4 d-none">
                             <div class="card-header bg-none border-0 pt-3 pb-2">
                                 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
@@ -322,6 +322,9 @@
                                         <a href="#" id="inlinePdfDownloadBtn" class="btn btn-sm btn-theme">
                                             <i class="bi bi-download me-1"></i> Descargar Archivo
                                         </a>
+                                        <button type="button" id="btnCloseInlineViewer" class="btn btn-sm btn-outline-danger">
+                                            <i class="bi bi-x-lg me-1"></i> Ocultar visor
+                                        </button>
                                     </div>
                                 </div>
                             </div>

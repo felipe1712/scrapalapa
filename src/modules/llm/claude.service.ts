@@ -556,6 +556,131 @@ export class ClaudeService {
   }
 
   /**
+   * Realiza OCR de alta precisión sobre páginas de un PDF escaneado (imágenes JPEG renderizadas o PDF base64)
+   * usando las capacidades multimodales de visión de Claude.
+   */
+  async extractTextFromScannedImages(params: {
+    renderedPages: Array<{ page: number; media_type: 'image/jpeg' | 'image/png'; data: string }>;
+    pdfBufferFallback?: Buffer;
+    fileName?: string;
+    tenderId?: string;
+  }): Promise<string | null> {
+    const cfg = await llmConfigCache.getEffectiveTaskConfig('resumen_licitacion');
+    if (!cfg.globalActivo || !cfg.hasValidKey) {
+      return null;
+    }
+
+    await assertBudgetAllowsExecution();
+    const apiKey = decryptApiKey(cfg.apiKeyEncrypted);
+    if (!apiKey) return null;
+
+    const startTime = Date.now();
+    const client = new Anthropic({
+      apiKey,
+      baseURL: cfg.apiBaseUrl,
+      timeout: Math.max(cfg.timeoutMs, 60000),
+      maxRetries: 0,
+      defaultHeaders: {
+        'anthropic-version': cfg.anthropicVersion,
+      },
+    });
+
+    const contentBlocks: any[] = [];
+
+    if (params.renderedPages && params.renderedPages.length > 0) {
+      for (const p of params.renderedPages.slice(0, 10)) {
+        contentBlocks.push({
+          type: 'text',
+          text: `Página ${p.page}:`,
+        });
+        contentBlocks.push({
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: p.media_type || 'image/jpeg',
+            data: p.data,
+          },
+        });
+      }
+    } else if (params.pdfBufferFallback && params.pdfBufferFallback.length <= 20 * 1024 * 1024) {
+      contentBlocks.push({
+        type: 'document',
+        source: {
+          type: 'base64',
+          media_type: 'application/pdf',
+          data: params.pdfBufferFallback.toString('base64'),
+        },
+      });
+    } else {
+      return null;
+    }
+
+    contentBlocks.push({
+      type: 'text',
+      text:
+        'Realiza el OCR completo y fiel de todas las páginas mostradas de este documento de licitación. ' +
+        'Transcribe íntegramente todas las tablas (números de licitación, conceptos/descripciones, fechas, horarios, costos de bases, cantidades) y todo el texto legal. ' +
+        'Separa cada página con el encabezado "--- PÁGINA N ---".',
+    });
+
+    try {
+      const response = await callWithRateLimitBackoff(
+        () =>
+          client.messages.create({
+            model: cfg.model,
+            max_tokens: Math.max(cfg.maxTokens, 4096),
+            temperature: 0,
+            messages: [
+              {
+                role: 'user',
+                content: contentBlocks,
+              },
+            ],
+          }),
+        cfg.maxRetries
+      );
+
+      const latencyMs = Date.now() - startTime;
+      const inputTokens = response.usage?.input_tokens || 0;
+      const outputTokens = response.usage?.output_tokens || 0;
+      const cacheCreation = (response.usage as any)?.cache_creation_input_tokens || 0;
+      const cacheRead = (response.usage as any)?.cache_read_input_tokens || 0;
+      const costUsd = calculateEstimatedCostUsd(
+        cfg.modelInfo,
+        inputTokens,
+        outputTokens,
+        cacheCreation,
+        cacheRead
+      );
+
+      await recordUsageLog({
+        tarea: 'ocr_imagen_pdf',
+        modelo: response.model || cfg.model,
+        tokensEntrada: inputTokens,
+        tokensSalida: outputTokens,
+        tokensCacheCreacion: cacheCreation,
+        tokensCacheLectura: cacheRead,
+        costoEstimado: costUsd,
+        latenciaMs: latencyMs,
+        exito: true,
+        tenderId: params.tenderId,
+        documentId: params.fileName || 'SCANNED-PDF',
+      });
+
+      const ocrText = response.content
+        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+        .map((b) => b.text)
+        .join('\n')
+        .trim();
+
+      return ocrText.length > 0 ? ocrText : null;
+    } catch (err: any) {
+      console.warn('[Vision OCR] Aviso al procesar OCR de imagen:', err?.message);
+      return null;
+    }
+  }
+
+  /**
    * Extracción en JSON estructurado usando Tool Use con esquema definido,
    * Prompt Caching tanto en system como en el esquema de la herramienta,
    * y validación estricta de la respuesta con Zod.

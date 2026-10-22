@@ -19,7 +19,7 @@ const IngestUrlSchema = z.object({
   keywords: z.string().trim().optional().default(''),
   ocr_mode: z.enum(['auto', 'forzar_surya']).optional().default('auto'),
   process_attachments: z.boolean().optional().default(true),
-  max_attachments: z.coerce.number().int().min(1).max(10).optional().default(4),
+  max_attachments: z.coerce.number().int().min(1).max(20).optional().default(8),
   auth_username: z.string().trim().optional(),
   auth_password: z.string().optional(),
   auth_login_url: z.string().trim().optional(),
@@ -287,35 +287,41 @@ tendersRouter.post('/ingest-url', async (req: Request, res: Response) => {
       }
     }
 
-    // Verificar también Hits de palabras clave dentro del texto extraído de los documentos PDF/Word (por ejemplo cuando la URL era un PDF directo)
+    // Verificar también Hits de palabras clave dentro del texto extraído de los documentos PDF/Word (por ejemplo cuando la URL era un PDF escaneado directo)
     const allKeywordHits: KeywordHit[] = [...pageData.keywordHits];
     if (keywordsList.length > 0 && processedDocs.length > 0) {
       const normalizedKws = keywordsList.map((kw) => ({
         original: kw,
         norm: normalizeForSearch(kw),
       }));
+      const seenDocSnippets = new Set(
+        allKeywordHits.map((h) => normalizeForSearch(h.contextSnippet.slice(0, 90)))
+      );
 
       for (const doc of processedDocs) {
-        const normDocText = normalizeForSearch(doc.extractedText);
-        const matchedInDoc = normalizedKws
-          .filter((k) => normDocText.includes(k.norm))
-          .map((k) => k.original);
+        const lines = doc.extractedText
+          .split(/\n+/)
+          .map((l) => l.trim())
+          .filter((l) => l.length > 18);
 
-        if (matchedInDoc.length > 0) {
-          // Buscar el primer fragmento del documento donde aparece la primera palabra clave
-          const firstNormKw = normalizeForSearch(matchedInDoc[0]);
-          const idx = normDocText.indexOf(firstNormKw);
-          const snippet =
-            idx >= 0
-              ? doc.extractedText.slice(Math.max(0, idx - 60), Math.min(doc.extractedText.length, idx + 240)).replace(/\s+/g, ' ').trim()
-              : doc.extractedText.slice(0, 260).replace(/\s+/g, ' ').trim();
+        for (const line of lines) {
+          const normLine = normalizeForSearch(line);
+          const matchedInLine = normalizedKws
+            .filter((k) => normLine.includes(k.norm))
+            .map((k) => k.original);
 
-          allKeywordHits.push({
-            matchedKeywords: matchedInDoc,
-            contextSnippet: `[Documento ${doc.fileName}]: ${snippet}`,
-            sourceUrl: doc.sourceUrl,
-            documentUrls: [doc.sourceUrl],
-          });
+          if (matchedInLine.length > 0) {
+            const snippetKey = normLine.slice(0, 90);
+            if (seenDocSnippets.has(snippetKey)) continue;
+            seenDocSnippets.add(snippetKey);
+
+            allKeywordHits.push({
+              matchedKeywords: matchedInLine,
+              contextSnippet: `[${doc.fileName}] ${line.slice(0, 280)}`,
+              sourceUrl: doc.sourceUrl,
+              documentUrls: [doc.sourceUrl],
+            });
+          }
         }
       }
     }
