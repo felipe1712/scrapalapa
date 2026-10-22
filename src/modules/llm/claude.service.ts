@@ -234,6 +234,44 @@ function computeBackoffDelayMs(err: any, attempt: number): number {
   return baseMs + jitter;
 }
 
+const modelsWithoutSamplingParams = new Set<string>();
+
+/**
+ * Envuelve client.messages.create para omitir automáticamente `temperature` y `top_p`
+ * en modelos de Anthropic donde dichos parámetros han sido deprecados (HTTP 400).
+ */
+async function createMessageSafe(
+  client: Anthropic,
+  params: Anthropic.MessageCreateParamsNonStreaming
+): Promise<Anthropic.Message> {
+  const cleanParams: Anthropic.MessageCreateParamsNonStreaming = { ...params };
+  if (modelsWithoutSamplingParams.has(cleanParams.model)) {
+    delete cleanParams.temperature;
+    delete cleanParams.top_p;
+  }
+
+  try {
+    return await client.messages.create(cleanParams);
+  } catch (err: any) {
+    const status = Number(err?.status || err?.statusCode || 0);
+    const msg = String(err?.message || '');
+    if (
+      status === 400 &&
+      /temperature|top_p/i.test(msg) &&
+      (cleanParams.temperature !== undefined || cleanParams.top_p !== undefined)
+    ) {
+      console.warn(
+        `[Claude SDK] El modelo "${cleanParams.model}" no admite temperature/top_p. Reintentando sin parámetros de muestreo...`
+      );
+      modelsWithoutSamplingParams.add(cleanParams.model);
+      delete cleanParams.temperature;
+      delete cleanParams.top_p;
+      return await client.messages.create(cleanParams);
+    }
+    throw err;
+  }
+}
+
 /**
  * Ejecuta una llamada al SDK de Anthropic con reintentos y backoff ante errores 429 / 5xx,
  * respetando encabezados de rate limit.
@@ -320,7 +358,7 @@ export class ClaudeService {
         },
       });
 
-      const response = await client.messages.create({
+      const response = await createMessageSafe(client, {
         model: modelToTest,
         max_tokens: Math.min(input.max_tokens || 32, 64),
         ...(input.temperature !== null && input.temperature !== undefined
@@ -459,7 +497,7 @@ export class ClaudeService {
     try {
       const response = await callWithRateLimitBackoff(
         () =>
-          client.messages.create({
+          createMessageSafe(client, {
             model: cfg.model,
             max_tokens: cfg.maxTokens,
             ...(cfg.temperature !== null ? { temperature: cfg.temperature } : {}),
@@ -626,10 +664,9 @@ export class ClaudeService {
     try {
       const response = await callWithRateLimitBackoff(
         () =>
-          client.messages.create({
+          createMessageSafe(client, {
             model: cfg.model,
             max_tokens: Math.max(cfg.maxTokens, 4096),
-            temperature: 0,
             messages: [
               {
                 role: 'user',
@@ -753,7 +790,7 @@ export class ClaudeService {
       try {
         response = await callWithRateLimitBackoff(
           () =>
-            client.messages.create({
+            createMessageSafe(client, {
               model: cfg.model,
               max_tokens: cfg.maxTokens,
               ...(cfg.temperature !== null ? { temperature: cfg.temperature } : {}),
@@ -792,7 +829,7 @@ export class ClaudeService {
         // Si el modelo seleccionado no soporta tools o tool_choice, hacer fallback transparente a salida JSON por texto
         response = await callWithRateLimitBackoff(
           () =>
-            client.messages.create({
+            createMessageSafe(client, {
               model: cfg.model,
               max_tokens: cfg.maxTokens,
               ...(cfg.temperature !== null ? { temperature: cfg.temperature } : {}),
