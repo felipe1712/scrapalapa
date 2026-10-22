@@ -165,12 +165,12 @@
         </div>
 
         <div class="container-fluid">
-            <!-- Aviso si Claude está desactivado o sin API Key -->
+            <!-- Aviso si IA está desactivada o sin API Key -->
             <div id="pipelineWarningBanner" class="alert alert-warning border-0 shadow-sm d-none mb-4">
                 <div class="d-flex align-items-center">
                     <i class="bi bi-exclamation-triangle-fill fs-4 me-3 text-warning"></i>
                     <div>
-                        <h6 class="mb-1 text-dark">Claude desactivado — Se ejecutará únicamente Lightpanda + Surya OCR + Reglas locales</h6>
+                        <h6 class="mb-1 text-dark">Síntesis automática desactivada — Extracción documental activa</h6>
                         <p class="mb-0 small text-secondary" id="pipelineWarningText"></p>
                     </div>
                 </div>
@@ -180,13 +180,13 @@
             <div id="ingestFeedbackAlert" class="alert d-none border-0 shadow-sm mb-3"></div>
 
             <!-- ===================================================================== -->
-            <!-- FORMULARIO SIMPLE DE INGESTA POR URL (LIGHTPANDA -> SURYA -> CLAUDE)  -->
+            <!-- FORMULARIO DE BÚSQUEDA Y EXTRACCIÓN POR URL Y PALABRAS CLAVE          -->
             <!-- ===================================================================== -->
             <div class="card border-0 shadow-sm mb-4">
                 <div class="card-body p-4">
                     <form id="ingestUrlForm" novalidate>
                         <div class="row g-3 align-items-end">
-                            <div class="col-12 col-lg-6">
+                            <div class="col-12 col-lg-5">
                                 <label for="tenderUrlInput" class="form-label fw-bold text-dark mb-1">
                                     <i class="bi bi-globe2 text-theme me-1"></i> URL de la Licitación o Portal de Convocatorias
                                 </label>
@@ -195,24 +195,18 @@
                                     <input type="url" id="tenderUrlInput" class="form-control border-0" placeholder="https://ejemplo.gob.mx/licitaciones/... o enlace a .pdf / .docx" required>
                                 </div>
                             </div>
-                            <div class="col-12 col-lg-6">
+                            <div class="col-12 col-lg-4">
                                 <label for="tenderKeywordsInput" class="form-label fw-bold text-dark mb-1">
-                                    <i class="bi bi-search text-theme me-1"></i> Palabras Clave a buscar <span class="fw-normal text-secondary small">(separadas por coma)</span>
+                                    <i class="bi bi-search text-theme me-1"></i> Palabras Clave <span class="fw-normal text-secondary small">(separadas por coma)</span>
                                 </label>
                                 <div class="input-group input-group-lg border rounded">
                                     <span class="input-group-text bg-white border-0 text-theme"><i class="bi bi-tags fs-5"></i></span>
                                     <input type="text" id="tenderKeywordsInput" class="form-control border-0" placeholder="mantenimiento, desarrollo, adquisición" value="mantenimiento, desarrollo, adquisición">
                                 </div>
                             </div>
-                            <div class="col-12 col-sm-6 col-lg-auto ms-lg-auto">
-                                <select id="ocrModeSelect" class="form-select">
-                                    <option value="auto" selected>Surya OCR: Automático</option>
-                                    <option value="forzar_surya">Surya OCR: Forzar en todas las páginas</option>
-                                </select>
-                            </div>
-                            <div class="col-12 col-sm-6 col-lg-auto">
-                                <button type="submit" id="btnIngestUrl" class="btn btn-theme w-100 px-4">
-                                    <i class="bi bi-cloud-arrow-down-fill me-2"></i> Buscar Hits, Traer Documento y Sintetizar
+                            <div class="col-12 col-lg-3">
+                                <button type="submit" id="btnIngestUrl" class="btn btn-theme btn-lg w-100">
+                                    <i class="bi bi-cloud-arrow-down-fill me-2"></i> Buscar y Extraer
                                 </button>
                             </div>
                         </div>
@@ -233,24 +227,9 @@
                                     </label>
                                 </div>
                             </div>
-
-                            <!-- Indicador visual de pasos del pipeline -->
-                            <div id="pipelineStepsBar" class="d-none d-flex flex-wrap gap-2 align-items-center">
-                                <span id="stepBadge1" class="badge bg-light text-secondary border step-pill">
-                                    1. Lightpanda Browser
-                                </span>
-                                <i class="bi bi-arrow-right text-secondary small"></i>
-                                <span id="stepBadge2" class="badge bg-light text-secondary border step-pill">
-                                    2. Surya OCR / Word
-                                </span>
-                                <i class="bi bi-arrow-right text-secondary small"></i>
-                                <span id="stepBadge3" class="badge bg-light text-secondary border step-pill">
-                                    3. Síntesis en Claude
-                                </span>
-                            </div>
                         </div>
 
-                        <!-- Panel desplegable de Credenciales de Acceso (Opción 1 en el mismo formulario) -->
+                        <!-- Panel desplegable de Credenciales de Acceso -->
                         <div id="authCredentialsBox" class="d-none mt-3 pt-3 border-top">
                             <div class="row g-3 align-items-end">
                                 <div class="col-12 col-md-4">
@@ -278,18 +257,12 @@
             </div>
 
             <!-- ===================================================================== -->
-            <!-- PESTAÑAS DE RESULTADOS E HISTORIAL                                    -->
+            <!-- PESTAÑAS DE RESULTADOS E HISTORIAL (SIN PESTAÑA DE DOCUMENTOS)        -->
             <!-- ===================================================================== -->
             <ul class="nav nav-tabs nav-WinDOORS nav-lg mb-4" id="tenderTabs" role="tablist">
                 <li class="nav-item" role="presentation">
                     <a class="nav-link active" href="#sintesis" data-tab-target="#pane-sintesis" role="tab">
-                        <i class="bi bi-stars me-1"></i> Síntesis de Claude y Datos Extraídos
-                    </a>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <a class="nav-link" href="#documentos" data-tab-target="#pane-documentos" role="tab">
-                        <i class="bi bi-file-earmark-pdf me-1"></i> Documentos y Texto (Surya / Lightpanda)
-                        <span id="docsCountBadge" class="badge bg-secondary ms-1">0</span>
+                        <i class="bi bi-file-earmark-richtext me-1"></i> Síntesis y Documentos de Licitación
                     </a>
                 </li>
                 <li class="nav-item" role="presentation">
@@ -302,32 +275,58 @@
 
             <div class="tab-content" id="tenderTabsContent">
 
-                <!-- PESTAÑA 1: SÍNTESIS DE CLAUDE Y CAMPOS EXTRAÍDOS -->
+                <!-- PESTAÑA 1: SÍNTESIS, DOCUMENTOS ENCONTRADOS Y VISOR PDF IN-SITU -->
                 <div class="tab-pane fade show active" id="pane-sintesis" role="tabpanel">
                     <div id="emptySynthesisState" class="card border-0 shadow-sm text-center py-5">
                         <div class="card-body">
                             <i class="bi bi-globe2 fs-1 text-theme mb-3 d-block"></i>
-                            <h6 class="text-dark">Ingresa una URL arriba para comenzar</h6>
+                            <h6 class="text-dark">Ingresa una URL y palabras clave arriba para comenzar</h6>
                             <p class="text-secondary small mb-0">
-                                El sistema leerá la página con <strong>Lightpanda</strong>, descargará los anexos PDF o Word para procesarlos en <strong>Surya OCR</strong> y generará la síntesis con <strong>Claude</strong>.
+                                El sistema buscará coincidencias en el portal, traerá los documentos de la licitación para visualizarlos aquí mismo y elaborará la síntesis ejecutiva.
                             </p>
                         </div>
                     </div>
 
                     <div id="activeTenderContainer" class="d-none">
-                        <!-- Banner de Hits de Palabras Clave y Documentos Traídos al Portal -->
+                        <!-- Listado de Hits de Palabras Clave y Documentos Encontrados -->
                         <div id="keywordHitsCard" class="card border-0 shadow-sm mb-4 d-none">
                             <div class="card-body p-3">
                                 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
                                     <div>
                                         <h6 class="mb-0 text-dark">
-                                            <i class="bi bi-bullseye text-theme me-1"></i> Coincidencias ("Hits") de Palabras Clave en Lightpanda
+                                            <i class="bi bi-bullseye text-theme me-1"></i> Coincidencias ("Hits") y Documentos Encontrados
                                         </h6>
                                         <small class="text-secondary" id="keywordsSearchedSummary"></small>
                                     </div>
                                     <div id="portalDocsQuickLinks" class="d-flex flex-wrap gap-2"></div>
                                 </div>
                                 <div id="keywordHitsList" class="list-group list-group-flush small"></div>
+                            </div>
+                        </div>
+
+                        <!-- VISOR PDF IN-SITU (ABAJO DEL LISTADO DE DOCUMENTOS ENCONTRADOS) -->
+                        <div id="inlinePdfViewerCard" class="card border-0 shadow-sm mb-4 d-none">
+                            <div class="card-header bg-none border-0 pt-3 pb-2">
+                                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                                    <div class="d-flex align-items-center gap-2">
+                                        <i class="bi bi-file-earmark-pdf-fill text-danger fs-5"></i>
+                                        <div>
+                                            <h6 class="title mb-0" id="inlinePdfViewerTitle">Visor de Documento de Licitación</h6>
+                                            <small class="text-secondary" id="inlinePdfViewerMeta"></small>
+                                        </div>
+                                    </div>
+                                    <div class="d-flex flex-wrap gap-2">
+                                        <a href="#" target="_blank" id="inlinePdfOpenNewTab" class="btn btn-sm btn-outline-secondary">
+                                            <i class="bi bi-box-arrow-up-right me-1"></i> Abrir en pestaña nueva
+                                        </a>
+                                        <a href="#" id="inlinePdfDownloadBtn" class="btn btn-sm btn-theme">
+                                            <i class="bi bi-download me-1"></i> Descargar Archivo
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="card-body p-2">
+                                <iframe id="inlinePdfViewerFrame" src="about:blank" class="w-100 rounded border" style="height: 680px; background: #f4f6f8;"></iframe>
                             </div>
                         </div>
 
@@ -363,7 +362,7 @@
                             <div class="col-12 col-md-6 col-xl-3">
                                 <div class="card border-0 shadow-sm h-100">
                                     <div class="card-body">
-                                        <div class="small text-secondary mb-1">Procesamiento</div>
+                                        <div class="small text-secondary mb-1">Estado de Análisis</div>
                                         <div class="fw-bold text-dark small" id="fieldModeloUsado">-</div>
                                         <div class="small text-secondary mt-1" id="fieldMetricas"></div>
                                     </div>
@@ -372,7 +371,7 @@
                         </div>
 
                         <div class="row">
-                            <!-- Columna Principal: Síntesis Ejecutiva de Claude -->
+                            <!-- Columna Principal: Síntesis Ejecutiva -->
                             <div class="col-12 col-lg-8 mb-4">
                                 <div class="card border-0 shadow-sm h-100">
                                     <div class="card-header bg-none border-0 pt-3 pb-0">
@@ -397,7 +396,7 @@
                                 </div>
                             </div>
 
-                            <!-- Columna Lateral: Requisitos Clave y Reglas Locales -->
+                            <!-- Columna Lateral: Requisitos Clave -->
                             <div class="col-12 col-lg-4 mb-4">
                                 <div class="card border-0 shadow-sm mb-3">
                                     <div class="card-header bg-none border-0 pt-3 pb-0">
@@ -410,7 +409,7 @@
 
                                 <div class="card border-0 shadow-sm">
                                     <div class="card-header bg-none border-0 pt-3 pb-0">
-                                        <h6 class="title mb-0">Hallazgos por Reglas Locales</h6>
+                                        <h6 class="title mb-0">Datos Detectados en Convocatoria</h6>
                                     </div>
                                     <div class="card-body">
                                         <pre id="localRulesPre" class="p-2 rounded bg-light border small mb-0" style="max-height: 220px; overflow: auto;"></pre>
@@ -421,59 +420,7 @@
                     </div>
                 </div>
 
-                <!-- PESTAÑA 2: DOCUMENTOS PROCESADOS EN SURYA Y TEXTO DE PÁGINA -->
-                <div class="tab-pane fade" id="pane-documentos" role="tabpanel">
-                    <div class="card border-0 shadow-sm mb-4">
-                        <div class="card-header bg-none border-0 pt-3 pb-0">
-                            <h6 class="title mb-0">Archivos Descargados y Procesados (Surya OCR / Word)</h6>
-                        </div>
-                        <div class="card-body">
-                            <div class="table-responsive">
-                                <table class="table table-sm align-middle mb-0">
-                                    <thead class="table-light">
-                                        <tr>
-                                            <th>Archivo</th>
-                                            <th>Tipo</th>
-                                            <th>Método de Extracción</th>
-                                            <th class="text-center">Páginas</th>
-                                            <th class="text-end">Tamaño</th>
-                                            <th>URL Origen</th>
-                                            <th class="text-end">En Nuestro Portal</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="processedDocsTableBody">
-                                        <tr><td colspan="7" class="text-center text-secondary py-3">Sin documentos procesados aún.</td></tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="row">
-                        <div class="col-12 col-lg-6 mb-4">
-                            <div class="card border-0 shadow-sm h-100">
-                                <div class="card-header bg-none border-0 pt-3 pb-0">
-                                    <h6 class="title mb-0">Texto Extraído de la Página Web (Lightpanda)</h6>
-                                </div>
-                                <div class="card-body">
-                                    <pre id="rawPageTextPre" class="p-3 rounded bg-dark text-light small mb-0" style="height: 360px; overflow: auto;">Sin contenido.</pre>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-12 col-lg-6 mb-4">
-                            <div class="card border-0 shadow-sm h-100">
-                                <div class="card-header bg-none border-0 pt-3 pb-0">
-                                    <h6 class="title mb-0">Texto Extraído de Documentos PDF / Word (Surya OCR)</h6>
-                                </div>
-                                <div class="card-body">
-                                    <pre id="rawDocsTextPre" class="p-3 rounded bg-dark text-light small mb-0" style="height: 360px; overflow: auto;">Sin documentos adjuntos.</pre>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- PESTAÑA 3: HISTORIAL DE LICITACIONES EN POSTGRESQL -->
+                <!-- PESTAÑA 2: HISTORIAL DE LICITACIONES EN POSTGRESQL -->
                 <div class="tab-pane fade" id="pane-historial" role="tabpanel">
                     <div class="card border-0 shadow-sm">
                         <div class="card-header bg-none border-0 pt-3 pb-0">

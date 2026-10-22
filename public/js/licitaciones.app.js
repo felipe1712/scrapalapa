@@ -1,5 +1,5 @@
 /**
- * Scrapper — Licitaciones & Pipeline (Lightpanda + Surya OCR + Claude)
+ * Scrapper — Licitaciones & Pipeline
  */
 (function () {
   'use strict';
@@ -7,12 +7,12 @@
   const state = {
     currentTender: null,
     currentDocuments: [],
+    activeViewerDocId: null,
     tendersList: [],
   };
 
   const TAB_MAP = {
     '#sintesis': '#pane-sintesis',
-    '#documentos': '#pane-documentos',
     '#historial': '#pane-historial',
   };
 
@@ -48,32 +48,6 @@
       <button type="button" class="btn-close" onclick="this.parentElement.parentElement.classList.add('d-none')"></button>
     </div>`;
     el.classList.remove('d-none');
-  }
-
-  function setStepperState(step) {
-    const bar = document.getElementById('pipelineStepsBar');
-    const s1 = document.getElementById('stepBadge1');
-    const s2 = document.getElementById('stepBadge2');
-    const s3 = document.getElementById('stepBadge3');
-    if (!bar || !s1 || !s2 || !s3) return;
-
-    if (step === 0) {
-      bar.classList.add('d-none');
-      return;
-    }
-
-    bar.classList.remove('d-none');
-    [s1, s2, s3].forEach((el, idx) => {
-      const n = idx + 1;
-      el.classList.remove('active', 'done', 'bg-light', 'text-secondary');
-      if (n < step) {
-        el.classList.add('done');
-      } else if (n === step) {
-        el.classList.add('active');
-      } else {
-        el.classList.add('bg-light', 'text-secondary');
-      }
-    });
   }
 
   async function loadPipelineStatus() {
@@ -156,7 +130,7 @@
         .join('');
 
       tbody.querySelectorAll('.btn-view-tender').forEach((btn) => {
-        btn.addEventListener('click', () => loadSingleTender(Number(btn.getAttribute('data-id'))));
+        btn.addEventListener('click', () => loadSingleTender(Number(btn.getAttribute('data-id')), true));
       });
 
       tbody.querySelectorAll('.btn-delete-tender').forEach((btn) => {
@@ -167,7 +141,6 @@
         });
       });
 
-      // Si no hay licitación abierta aún y existe al menos una en el historial, mostrar la más reciente
       if (!state.currentTender && state.tendersList.length > 0) {
         await loadSingleTender(state.tendersList[0].id, false);
       }
@@ -184,6 +157,7 @@
 
       state.currentTender = data.tender;
       state.currentDocuments = data.documents || [];
+      state.activeViewerDocId = state.currentDocuments[0]?.id || null;
       renderActiveTender();
       if (switchToSynthesis) {
         activateTab('#sintesis');
@@ -193,6 +167,57 @@
     }
   }
 
+  function renderInlinePdfViewer(docId) {
+    const viewerCard = document.getElementById('inlinePdfViewerCard');
+    const viewerFrame = document.getElementById('inlinePdfViewerFrame');
+    const viewerTitle = document.getElementById('inlinePdfViewerTitle');
+    const viewerMeta = document.getElementById('inlinePdfViewerMeta');
+    const openNewTabBtn = document.getElementById('inlinePdfOpenNewTab');
+    const downloadBtn = document.getElementById('inlinePdfDownloadBtn');
+
+    if (!viewerCard || !viewerFrame) return;
+
+    const doc = state.currentDocuments.find((d) => d.id === Number(docId)) || state.currentDocuments[0];
+    if (!doc) {
+      viewerCard.classList.add('d-none');
+      viewerFrame.src = 'about:blank';
+      return;
+    }
+
+    state.activeViewerDocId = doc.id;
+    viewerCard.classList.remove('d-none');
+
+    const inlineUrl = `/api/tenders/documents/${doc.id}/download`;
+    const downloadUrl = `/api/tenders/documents/${doc.id}/download?download=1`;
+
+    if (viewerTitle) {
+      viewerTitle.textContent = doc.file_name || 'Documento de Licitación';
+    }
+    if (viewerMeta) {
+      const kb = (Number(doc.file_size_bytes || 0) / 1024).toFixed(1);
+      viewerMeta.textContent = `${(doc.file_type || 'pdf').toUpperCase()} · ${doc.paginas_procesadas || 1} pág(s) · ${kb} KB`;
+    }
+    if (openNewTabBtn) openNewTabBtn.href = inlineUrl;
+    if (downloadBtn) downloadBtn.href = downloadUrl;
+
+    if (viewerFrame.getAttribute('data-loaded-url') !== inlineUrl) {
+      viewerFrame.setAttribute('data-loaded-url', inlineUrl);
+      viewerFrame.src = inlineUrl;
+    }
+
+    // Actualizar estado activo de los botones de selección de documento
+    document.querySelectorAll('.btn-select-viewer-doc').forEach((btn) => {
+      const btnId = Number(btn.getAttribute('data-doc-id'));
+      if (btnId === doc.id) {
+        btn.classList.remove('btn-outline-primary');
+        btn.classList.add('btn-theme');
+      } else {
+        btn.classList.remove('btn-theme');
+        btn.classList.add('btn-outline-primary');
+      }
+    });
+  }
+
   function renderActiveTender() {
     const t = state.currentTender;
     if (!t) return;
@@ -200,10 +225,7 @@
     document.getElementById('emptySynthesisState')?.classList.add('d-none');
     document.getElementById('activeTenderContainer')?.classList.remove('d-none');
 
-    const docsCountBadge = document.getElementById('docsCountBadge');
-    if (docsCountBadge) docsCountBadge.textContent = String(state.currentDocuments.length);
-
-    // Renderizar Hits de Palabras Clave y accesos directos a los documentos traídos al portal
+    // Renderizar Hits de Palabras Clave y listado de documentos encontrados
     const hitsCard = document.getElementById('keywordHitsCard');
     const kwSummary = document.getElementById('keywordsSearchedSummary');
     const hitsListEl = document.getElementById('keywordHitsList');
@@ -215,18 +237,26 @@
         hitsCard.classList.remove('d-none');
         if (kwSummary) {
           kwSummary.innerHTML = t.keywords_buscadas
-            ? `Palabras buscadas: <strong>${t.keywords_buscadas}</strong> · <strong>${hits.length}</strong> coincidencia(s) ("hits") · <strong>${state.currentDocuments.length}</strong> documento(s) traído(s) al portal`
-            : `<strong>${state.currentDocuments.length}</strong> documento(s) traído(s) a nuestro portal`;
+            ? `Palabras buscadas: <strong>${t.keywords_buscadas}</strong> · <strong>${hits.length}</strong> coincidencia(s) ("hits") · <strong>${state.currentDocuments.length}</strong> documento(s) encontrado(s)`
+            : `<strong>${state.currentDocuments.length}</strong> documento(s) encontrado(s)`;
         }
         if (quickDocsEl) {
           quickDocsEl.innerHTML = state.currentDocuments
-            .map(
-              (d) =>
-                `<a href="/api/tenders/documents/${d.id}/download" target="_blank" class="btn btn-sm btn-theme">
-                  <i class="bi bi-file-earmark-arrow-down me-1"></i> ${d.file_name}
-                </a>`
-            )
+            .map((d, idx) => {
+              const isSelected = state.activeViewerDocId ? d.id === state.activeViewerDocId : idx === 0;
+              return `<button type="button" class="btn btn-sm ${
+                isSelected ? 'btn-theme' : 'btn-outline-primary'
+              } btn-select-viewer-doc" data-doc-id="${d.id}">
+                <i class="bi bi-file-earmark-pdf me-1"></i> ${d.file_name}
+              </button>`;
+            })
             .join('');
+
+          quickDocsEl.querySelectorAll('.btn-select-viewer-doc').forEach((btn) => {
+            btn.addEventListener('click', () => {
+              renderInlinePdfViewer(Number(btn.getAttribute('data-doc-id')));
+            });
+          });
         }
         if (hitsListEl) {
           if (hits.length > 0) {
@@ -255,6 +285,13 @@
       }
     }
 
+    // Mostrar Visor PDF In-Situ abajo del listado de documentos encontrados
+    if (state.currentDocuments.length > 0) {
+      renderInlinePdfViewer(state.activeViewerDocId || state.currentDocuments[0].id);
+    } else {
+      document.getElementById('inlinePdfViewerCard')?.classList.add('d-none');
+    }
+
     document.getElementById('activeTenderTitle').textContent = t.titulo || 'Licitación';
     const srcLink = document.getElementById('activeTenderSourceLink');
     if (srcLink) {
@@ -265,7 +302,7 @@
     document.getElementById('fieldEntidad').textContent = t.entidad || 'No especificada';
     document.getElementById('fieldExpediente').textContent = t.numero_expediente
       ? `Expediente: ${t.numero_expediente}`
-      : `Navegación: ${t.metodo_navegacion || 'Lightpanda'}`;
+      : '';
 
     document.getElementById('fieldPresupuesto').textContent = t.presupuesto_estimado
       ? `$${Number(t.presupuesto_estimado).toLocaleString()}`
@@ -286,10 +323,8 @@
         : '';
     }
 
-    document.getElementById('fieldModeloUsado').textContent = t.modelo_utilizado || 'Pipeline Local';
-    document.getElementById('fieldMetricas').textContent = `${Number(
-      t.tokens_utilizados || 0
-    ).toLocaleString()} tok · $${Number(t.costo_estimado || 0).toFixed(4)} USD · ${(
+    document.getElementById('fieldModeloUsado').textContent = t.modelo_utilizado || 'Completado';
+    document.getElementById('fieldMetricas').textContent = `${(
       Number(t.latencia_total_ms || 0) / 1000
     ).toFixed(1)}s`;
 
@@ -297,7 +332,7 @@
     if (synthesisBox) {
       synthesisBox.textContent =
         t.sintesis_claude ||
-        'No se generó síntesis con Claude (verifica que la clave de API esté activa o usa el botón "Regenerar Síntesis"). El texto extraído por Lightpanda y Surya OCR está disponible en la segunda pestaña.';
+        'Usa el botón "Regenerar Síntesis" para generar el resumen ejecutivo de esta licitación.';
     }
 
     const reqList = document.getElementById('requisitosList');
@@ -318,41 +353,6 @@
     if (localRulesPre) {
       localRulesPre.textContent = JSON.stringify(t.extraccion_reglas_locales || {}, null, 2);
     }
-
-    // Pestaña 2: Tabla de documentos y textos crudos
-    const docsTbody = document.getElementById('processedDocsTableBody');
-    if (docsTbody) {
-      docsTbody.innerHTML =
-        state.currentDocuments.length > 0
-          ? state.currentDocuments
-              .map(
-                (d) => `<tr>
-              <td class="fw-bold">${d.file_name}</td>
-              <td><span class="badge bg-uppercase bg-light text-dark border">${d.file_type}</span></td>
-              <td><code>${d.metodo_extraccion}</code></td>
-              <td class="text-center">${d.paginas_procesadas}</td>
-              <td class="text-end">${(Number(d.file_size_bytes || 0) / 1024).toFixed(1)} KB</td>
-              <td><a href="${d.source_url}" target="_blank" class="small text-truncate d-inline-block" style="max-width: 220px;">${d.source_url}</a></td>
-              <td class="text-end text-nowrap">
-                <a href="/api/tenders/documents/${d.id}/download" target="_blank" class="btn btn-sm btn-outline-primary">
-                  <i class="bi bi-box-arrow-up-right me-1"></i> Abrir / Descargar en Portal
-                </a>
-              </td>
-            </tr>`
-              )
-              .join('')
-          : `<tr><td colspan="7" class="text-center text-secondary py-3">La URL no contenía archivos PDF/Word adjuntos o solo se procesó el cuerpo de la página web.</td></tr>`;
-    }
-
-    const rawPagePre = document.getElementById('rawPageTextPre');
-    if (rawPagePre) {
-      rawPagePre.textContent = t.contenido_pagina_texto || '[URL de archivo directo sin cuerpo HTML]';
-    }
-
-    const rawDocsPre = document.getElementById('rawDocsTextPre');
-    if (rawDocsPre) {
-      rawDocsPre.textContent = t.texto_documentos_ocr || '[Sin documentos adjuntos procesados]';
-    }
   }
 
   async function handleIngestSubmit(e) {
@@ -365,7 +365,6 @@
     }
 
     const keywords = document.getElementById('tenderKeywordsInput')?.value?.trim() || '';
-    const ocrMode = document.getElementById('ocrModeSelect')?.value || 'auto';
     const processAttachments = Boolean(document.getElementById('processAttachmentsSwitch')?.checked);
     const requiresAuth = Boolean(document.getElementById('requiresAuthSwitch')?.checked);
     const authUsername = document.getElementById('authUsernameInput')?.value?.trim() || '';
@@ -380,20 +379,16 @@
 
     if (btn) {
       btn.disabled = true;
-      btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span> Buscando Hits y Extrayendo...`;
+      btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span> Buscando y extrayendo...`;
     }
 
     document.getElementById('ingestFeedbackAlert')?.classList.add('d-none');
-    setStepperState(1);
-
-    const stepTimer1 = setTimeout(() => setStepperState(2), 1800);
-    const stepTimer2 = setTimeout(() => setStepperState(3), 4200);
 
     try {
       const payload = {
         url,
         keywords,
-        ocr_mode: ocrMode,
+        ocr_mode: 'auto',
         process_attachments: processAttachments,
       };
       if (requiresAuth) {
@@ -409,39 +404,25 @@
       });
       const data = await res.json();
 
-      clearTimeout(stepTimer1);
-      clearTimeout(stepTimer2);
-
       if (!res.ok || !data.ok) {
-        setStepperState(0);
         showAlert(data.message || 'No se pudo procesar la URL indicada.', 'danger');
         return;
       }
 
-      setStepperState(4);
       state.currentTender = data.tender;
       state.currentDocuments = data.documents || [];
+      state.activeViewerDocId = state.currentDocuments[0]?.id || null;
       renderActiveTender();
       activateTab('#sintesis');
       await loadTendersHistory();
 
-      if (data.fallback_used && data.fallback_reason) {
-        showAlert(
-          `Extracción con Lightpanda y Surya completada. Nota de Claude: ${data.fallback_reason}`,
-          'warning'
-        );
-      } else {
-        showAlert('Licitación extraída y sintetizada con éxito.', 'success');
-      }
+      showAlert('Licitación extraída y documentos cargados con éxito.', 'success');
     } catch (err) {
-      clearTimeout(stepTimer1);
-      clearTimeout(stepTimer2);
-      setStepperState(0);
       showAlert('Error de red al procesar la URL: ' + err.message, 'danger');
     } finally {
       if (btn) {
         btn.disabled = false;
-        btn.innerHTML = `<i class="bi bi-cloud-arrow-down-fill me-2"></i> Buscar Hits, Traer Documento y Sintetizar`;
+        btn.innerHTML = `<i class="bi bi-cloud-arrow-down-fill me-2"></i> Buscar y Extraer`;
       }
     }
   }
@@ -449,7 +430,7 @@
   async function handleReanalyze(tarea) {
     if (!state.currentTender) return;
     const box = document.getElementById('claudeSynthesisContent');
-    if (box) box.textContent = `Ejecutando tarea "${tarea}" en Claude...`;
+    if (box) box.textContent = `Analizando licitación...`;
 
     try {
       const res = await fetch(`/api/tenders/${state.currentTender.id}/analyze`, {
@@ -459,7 +440,7 @@
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
-        showAlert(data.message || 'Error al analizar en Claude.', 'danger');
+        showAlert(data.message || 'Error al analizar la licitación.', 'danger');
         return;
       }
       await loadSingleTender(state.currentTender.id, true);
@@ -470,7 +451,6 @@
   }
 
   document.addEventListener('DOMContentLoaded', () => {
-    // Pestañas
     document.querySelectorAll('#tenderTabs .nav-link').forEach((link) => {
       link.addEventListener('click', (e) => {
         e.preventDefault();

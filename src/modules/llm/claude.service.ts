@@ -624,42 +624,67 @@ export class ClaudeService {
     });
 
     try {
-      const response = await callWithRateLimitBackoff(
-        () =>
-          client.messages.create({
-            model: cfg.model,
-            max_tokens: cfg.maxTokens,
-            ...(cfg.temperature !== null ? { temperature: cfg.temperature } : {}),
-            system: cfg.systemPrompt
-              ? [
-                  {
-                    type: 'text',
-                    text: cfg.systemPrompt,
-                    cache_control: { type: 'ephemeral' },
-                  },
-                ]
-              : undefined,
-            tools: [
-              {
-                name: options.toolName,
-                description: options.toolDescription,
-                input_schema: inputSchema,
-                cache_control: { type: 'ephemeral' },
-              } as any,
-            ],
-            tool_choice: {
-              type: 'tool',
-              name: options.toolName,
-            },
-            messages: [
-              {
-                role: 'user',
-                content: truncatedInput,
+      let response: Anthropic.Message;
+      try {
+        response = await callWithRateLimitBackoff(
+          () =>
+            client.messages.create({
+              model: cfg.model,
+              max_tokens: cfg.maxTokens,
+              ...(cfg.temperature !== null ? { temperature: cfg.temperature } : {}),
+              system: cfg.systemPrompt
+                ? [
+                    {
+                      type: 'text',
+                      text: cfg.systemPrompt,
+                      cache_control: { type: 'ephemeral' },
+                    },
+                  ]
+                : undefined,
+              tools: [
+                {
+                  name: options.toolName,
+                  description: options.toolDescription,
+                  input_schema: inputSchema,
+                  cache_control: { type: 'ephemeral' },
+                } as any,
+              ],
+              tool_choice: {
+                type: 'auto',
               },
-            ],
-          }),
-        cfg.maxRetries
-      );
+              messages: [
+                {
+                  role: 'user',
+                  content:
+                    `Utiliza la herramienta "${options.toolName}" (o devuelve exclusivamente un objeto JSON válido con ese esquema) para extraer los datos del siguiente documento:\n\n` +
+                    truncatedInput,
+                },
+              ],
+            }),
+          cfg.maxRetries
+        );
+      } catch (toolErr: any) {
+        // Si el modelo seleccionado no soporta tools o tool_choice, hacer fallback transparente a salida JSON por texto
+        response = await callWithRateLimitBackoff(
+          () =>
+            client.messages.create({
+              model: cfg.model,
+              max_tokens: cfg.maxTokens,
+              ...(cfg.temperature !== null ? { temperature: cfg.temperature } : {}),
+              system: cfg.systemPrompt,
+              messages: [
+                {
+                  role: 'user',
+                  content:
+                    `Responde ÚNICAMENTE con un objeto JSON válido (sin texto adicional ni bloques markdown) que cumpla con estas propiedades: ${JSON.stringify(
+                      inputSchema.properties
+                    )}\n\nTexto a analizar:\n` + truncatedInput,
+                },
+              ],
+            }),
+          cfg.maxRetries
+        );
+      }
 
       const latencyMs = Date.now() - startTime;
       const inputTokens = response.usage?.input_tokens || 0;
@@ -678,12 +703,25 @@ export class ClaudeService {
         (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use' && b.name === options.toolName
       );
 
-      if (!toolUseBlock) {
-        throw new Error('Claude no devolvió el bloque tool_use esperado para la salida estructurada.');
+      let rawCandidate: any = toolUseBlock?.input;
+
+      if (!rawCandidate) {
+        const textContent = response.content
+          .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+          .map((b) => b.text)
+          .join('\n');
+        const jsonMatch = textContent.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          rawCandidate = JSON.parse(jsonMatch[0]);
+        }
+      }
+
+      if (!rawCandidate) {
+        throw new Error('El modelo no devolvió datos estructurados válidos.');
       }
 
       // Validar la salida estructurada con Zod
-      const parsedData = options.zodSchema.parse(toolUseBlock.input);
+      const parsedData = options.zodSchema.parse(rawCandidate);
 
       await recordUsageLog({
         tarea: options.tarea,

@@ -125,9 +125,11 @@ tendersRouter.get('/documents/:docId/download', async (req: Request, res: Respon
     };
 
     const contentType = mimeMap[doc.file_type] || 'application/octet-stream';
-    const dispositionType = doc.file_type === 'pdf' ? 'inline' : 'attachment';
+    const forceAttachment = req.query.download === '1';
+    const dispositionType = !forceAttachment && doc.file_type === 'pdf' ? 'inline' : 'attachment';
 
     res.setHeader('Content-Type', contentType);
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
     res.setHeader(
       'Content-Disposition',
       `${dispositionType}; filename="${encodeURIComponent(doc.file_name)}"`
@@ -366,12 +368,12 @@ tendersRouter.post('/ingest-url', async (req: Request, res: Response) => {
     let fallbackUsed = false;
     let fallbackReason: string | undefined;
 
-    try {
-      const keywordInstruction =
-        keywordsList.length > 0
-          ? `\nIMPORTANTE: El usuario buscó específicamente las palabras clave: [${keywordsList.join(', ')}]. Prioriza la licitación y los documentos que hicieron "hit" con estas palabras clave.\n`
-          : '';
+    const keywordInstruction =
+      keywordsList.length > 0
+        ? `\nIMPORTANTE: El usuario buscó específicamente las palabras clave: [${keywordsList.join(', ')}]. Prioriza la licitación y los documentos que hicieron "hit" con estas palabras clave.\n`
+        : '';
 
+    try {
       const extractionRes = await claudeService.extractStructuredJson({
         tarea: 'completar_campos',
         userPrompt: keywordInstruction + fullConsolidatedText,
@@ -395,39 +397,48 @@ tendersRouter.post('/ingest-url', async (req: Request, res: Response) => {
           extractionRes.usage.cacheReadInputTokens;
         totalCostUsd += extractionRes.usage.estimatedCostUsd;
       }
+    } catch (extractErr: any) {
+      console.warn('[Ingest] Aviso en extracción estructurada:', extractErr?.message);
+    }
 
-      if (!fallbackUsed) {
-        const synthesisRes = await claudeService.generateTaskText({
-          tarea: 'resumen_licitacion',
-          userPrompt:
-            `Analiza la siguiente información extraída de la URL (${pageData.finalUrl}) y sus documentos adjuntos procesados con Surya OCR.\n` +
-            (keywordsList.length > 0
-              ? `El usuario buscó específicamente las palabras clave: "${keywordsList.join(', ')}" (se detectaron ${allKeywordHits.length} coincidencias/hits).\n`
-              : '') +
-            `Elabora una síntesis ejecutiva estructurada con:\n` +
-            `1. Coincidencias de palabras clave detectadas y objeto de la licitación\n` +
-            `2. Entidad convocante, presupuesto, moneda y plazos/fechas clave\n` +
-            `3. Requisitos técnicos, legales y financieros obligatorios extraídos del documento\n` +
-            `4. Documentos traídos al portal y observaciones relevantes.\n\n` +
-            fullConsolidatedText,
-          tenderId: `TND-${tenderId}`,
-          documentId: processedDocs[0]?.fileName || 'WEB-PAGE',
-        });
+    try {
+      const synthesisRes = await claudeService.generateTaskText({
+        tarea: 'resumen_licitacion',
+        userPrompt:
+          `Analiza la siguiente información extraída de la URL (${pageData.finalUrl}) y sus documentos adjuntos.\n` +
+          (keywordsList.length > 0
+            ? `El usuario buscó específicamente las palabras clave: "${keywordsList.join(', ')}" (se detectaron ${allKeywordHits.length} coincidencias/hits).\n`
+            : '') +
+          `Elabora una síntesis ejecutiva estructurada con:\n` +
+          `1. Coincidencias de palabras clave detectadas y objeto de la licitación\n` +
+          `2. Entidad convocante, presupuesto, moneda y plazos/fechas clave\n` +
+          `3. Requisitos técnicos, legales y financieros obligatorios extraídos del documento\n` +
+          `4. Documentos traídos al portal y observaciones relevantes.\n\n` +
+          fullConsolidatedText,
+        tenderId: `TND-${tenderId}`,
+        documentId: processedDocs[0]?.fileName || 'WEB-PAGE',
+      });
 
-        if (synthesisRes.ok && synthesisRes.data) {
-          claudeSynthesis = synthesisRes.data;
-          modelUsed = synthesisRes.model;
-          totalTokens +=
-            synthesisRes.usage.inputTokens +
-            synthesisRes.usage.outputTokens +
-            synthesisRes.usage.cacheCreationInputTokens +
-            synthesisRes.usage.cacheReadInputTokens;
-          totalCostUsd += synthesisRes.usage.estimatedCostUsd;
-        }
+      if (synthesisRes.fallbackLocalUsed) {
+        fallbackUsed = true;
+        fallbackReason = synthesisRes.fallbackReason;
+      } else if (synthesisRes.ok && synthesisRes.data) {
+        claudeSynthesis = synthesisRes.data;
+        modelUsed = synthesisRes.model;
+        fallbackUsed = false;
+        fallbackReason = undefined;
+        totalTokens +=
+          synthesisRes.usage.inputTokens +
+          synthesisRes.usage.outputTokens +
+          synthesisRes.usage.cacheCreationInputTokens +
+          synthesisRes.usage.cacheReadInputTokens;
+        totalCostUsd += synthesisRes.usage.estimatedCostUsd;
       }
     } catch (claudeErr: any) {
-      fallbackUsed = true;
-      fallbackReason = claudeErr?.message || 'Error al invocar Claude; se conservan los datos extraídos por Lightpanda + Surya.';
+      if (!structuredFields) {
+        fallbackUsed = true;
+        fallbackReason = claudeErr?.message || 'Error al generar la síntesis con IA.';
+      }
     }
 
     const totalLatencyMs = Date.now() - startTotal;
