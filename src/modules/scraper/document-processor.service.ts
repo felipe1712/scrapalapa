@@ -60,16 +60,37 @@ export class DocumentProcessorService {
     const arrayBuffer = await res.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
+    // Detectar tipo real por firma de bytes (magic bytes) o Content-Type en caso de enlaces dinámicos (/descargar?id=...)
+    let resolvedType: 'pdf' | 'docx' | 'doc' = fileType;
+    const ctHeader = (res.headers.get('content-type') || '').toLowerCase();
+    if (buffer.length >= 4 && buffer.subarray(0, 4).toString('ascii') === '%PDF') {
+      resolvedType = 'pdf';
+    } else if (buffer.length >= 4 && buffer[0] === 0x50 && buffer[1] === 0x4b) {
+      resolvedType = 'docx';
+    } else if (buffer.length >= 4 && buffer[0] === 0xd0 && buffer[1] === 0xcf) {
+      resolvedType = 'doc';
+    } else if (ctHeader.includes('pdf')) {
+      resolvedType = 'pdf';
+    } else if (ctHeader.includes('word') || ctHeader.includes('officedocument')) {
+      resolvedType = 'docx';
+    }
+
+    // Extraer nombre de archivo desde Content-Disposition si existe
+    const disposition = res.headers.get('content-disposition') || '';
+    const dispMatch = disposition.match(/filename\*?=(?:UTF-8'')?["']?([^"';\r\n]+)["']?/i);
+    const rawName = dispMatch
+      ? decodeURIComponent(dispMatch[1].trim())
+      : decodeURIComponent((res.url || fileUrl).split('?')[0].split('/').pop() || `documento.${resolvedType}`);
+
     const hash = crypto.createHash('sha256').update(buffer).digest('hex').slice(0, 12);
-    const rawName = decodeURIComponent(fileUrl.split('?')[0].split('/').pop() || `documento.${fileType}`);
     const safeName = rawName.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const finalFileName = `${hash}_${safeName.endsWith(`.${fileType}`) ? safeName : `${safeName}.${fileType}`}`;
+    const finalFileName = `${hash}_${safeName.endsWith(`.${resolvedType}`) ? safeName : `${safeName}.${resolvedType}`}`;
     const localPath = path.join(this.docsDir, finalFileName);
 
     fs.writeFileSync(localPath, buffer);
 
-    if (fileType === 'docx' || fileType === 'doc') {
-      return this.processWordDocument(localPath, rawName, fileUrl, fileType, buffer.length);
+    if (resolvedType === 'docx' || resolvedType === 'doc') {
+      return this.processWordDocument(localPath, rawName, fileUrl, resolvedType, buffer.length);
     }
 
     return this.processPdfWithSurya(localPath, rawName, fileUrl, buffer, ocrMode);

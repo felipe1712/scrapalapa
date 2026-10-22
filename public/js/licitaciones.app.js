@@ -203,6 +203,58 @@
     const docsCountBadge = document.getElementById('docsCountBadge');
     if (docsCountBadge) docsCountBadge.textContent = String(state.currentDocuments.length);
 
+    // Renderizar Hits de Palabras Clave y accesos directos a los documentos traídos al portal
+    const hitsCard = document.getElementById('keywordHitsCard');
+    const kwSummary = document.getElementById('keywordsSearchedSummary');
+    const hitsListEl = document.getElementById('keywordHitsList');
+    const quickDocsEl = document.getElementById('portalDocsQuickLinks');
+    const hits = Array.isArray(t.hits_encontrados) ? t.hits_encontrados : [];
+
+    if (hitsCard) {
+      if (t.keywords_buscadas || hits.length > 0 || state.currentDocuments.length > 0) {
+        hitsCard.classList.remove('d-none');
+        if (kwSummary) {
+          kwSummary.innerHTML = t.keywords_buscadas
+            ? `Palabras buscadas: <strong>${t.keywords_buscadas}</strong> · <strong>${hits.length}</strong> coincidencia(s) ("hits") · <strong>${state.currentDocuments.length}</strong> documento(s) traído(s) al portal`
+            : `<strong>${state.currentDocuments.length}</strong> documento(s) traído(s) a nuestro portal`;
+        }
+        if (quickDocsEl) {
+          quickDocsEl.innerHTML = state.currentDocuments
+            .map(
+              (d) =>
+                `<a href="/api/tenders/documents/${d.id}/download" target="_blank" class="btn btn-sm btn-theme">
+                  <i class="bi bi-file-earmark-arrow-down me-1"></i> ${d.file_name}
+                </a>`
+            )
+            .join('');
+        }
+        if (hitsListEl) {
+          if (hits.length > 0) {
+            hitsListEl.innerHTML = hits
+              .slice(0, 8)
+              .map((h) => {
+                const badges = (h.matchedKeywords || [])
+                  .map((kw) => `<span class="badge bg-success me-1">Hit: ${kw}</span>`)
+                  .join('');
+                return `<div class="list-group-item px-0 py-2">
+                  <div class="mb-1">${badges}</div>
+                  <div class="text-dark">${h.contextSnippet || ''}</div>
+                </div>`;
+              })
+              .join('');
+          } else if (t.keywords_buscadas) {
+            hitsListEl.innerHTML = `<div class="list-group-item px-0 py-2 text-warning">
+              <i class="bi bi-exclamation-circle me-1"></i> No se encontraron coincidencias exactas para "${t.keywords_buscadas}" en esta URL.
+            </div>`;
+          } else {
+            hitsListEl.innerHTML = '';
+          }
+        }
+      } else {
+        hitsCard.classList.add('d-none');
+      }
+    }
+
     document.getElementById('activeTenderTitle').textContent = t.titulo || 'Licitación';
     const srcLink = document.getElementById('activeTenderSourceLink');
     if (srcLink) {
@@ -280,11 +332,16 @@
               <td><code>${d.metodo_extraccion}</code></td>
               <td class="text-center">${d.paginas_procesadas}</td>
               <td class="text-end">${(Number(d.file_size_bytes || 0) / 1024).toFixed(1)} KB</td>
-              <td><a href="${d.source_url}" target="_blank" class="small text-truncate d-inline-block" style="max-width: 240px;">${d.source_url}</a></td>
+              <td><a href="${d.source_url}" target="_blank" class="small text-truncate d-inline-block" style="max-width: 220px;">${d.source_url}</a></td>
+              <td class="text-end text-nowrap">
+                <a href="/api/tenders/documents/${d.id}/download" target="_blank" class="btn btn-sm btn-outline-primary">
+                  <i class="bi bi-box-arrow-up-right me-1"></i> Abrir / Descargar en Portal
+                </a>
+              </td>
             </tr>`
               )
               .join('')
-          : `<tr><td colspan="6" class="text-center text-secondary py-3">La URL no contenía archivos PDF/Word adjuntos o solo se procesó el cuerpo de la página web.</td></tr>`;
+          : `<tr><td colspan="7" class="text-center text-secondary py-3">La URL no contenía archivos PDF/Word adjuntos o solo se procesó el cuerpo de la página web.</td></tr>`;
     }
 
     const rawPagePre = document.getElementById('rawPageTextPre');
@@ -307,6 +364,7 @@
       return;
     }
 
+    const keywords = document.getElementById('tenderKeywordsInput')?.value?.trim() || '';
     const ocrMode = document.getElementById('ocrModeSelect')?.value || 'auto';
     const processAttachments = Boolean(document.getElementById('processAttachmentsSwitch')?.checked);
     const requiresAuth = Boolean(document.getElementById('requiresAuthSwitch')?.checked);
@@ -322,7 +380,7 @@
 
     if (btn) {
       btn.disabled = true;
-      btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span> Procesando URL...`;
+      btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span> Buscando Hits y Extrayendo...`;
     }
 
     document.getElementById('ingestFeedbackAlert')?.classList.add('d-none');
@@ -334,6 +392,7 @@
     try {
       const payload = {
         url,
+        keywords,
         ocr_mode: ocrMode,
         process_attachments: processAttachments,
       };
@@ -382,7 +441,7 @@
     } finally {
       if (btn) {
         btn.disabled = false;
-        btn.innerHTML = `<i class="bi bi-cloud-arrow-down-fill me-2"></i> Extraer y Sintetizar`;
+        btn.innerHTML = `<i class="bi bi-cloud-arrow-down-fill me-2"></i> Buscar Hits, Traer Documento y Sintetizar`;
       }
     }
   }

@@ -8,6 +8,16 @@ export interface DiscoveredAttachment {
   url: string;
   label: string;
   fileType: 'pdf' | 'docx' | 'doc';
+  matchedKeyword?: string;
+  fromHitContext?: string;
+}
+
+export interface KeywordHit {
+  matchedKeywords: string[];
+  contextSnippet: string;
+  sourceUrl: string;
+  detailUrl?: string;
+  documentUrls: string[];
 }
 
 export interface LightpandaAuthOptions {
@@ -26,18 +36,58 @@ export interface LightpandaPageResult {
   directDocumentType?: 'pdf' | 'docx' | 'doc';
   pageText: string;
   attachments: DiscoveredAttachment[];
+  keywordsSearched: string[];
+  keywordHits: KeywordHit[];
   sessionCookieHeader?: string;
   basicAuthHeader?: string;
 }
 
 /**
+ * Normaliza texto para búsqueda insensible a mayúsculas y acentos/tildes.
+ */
+export function normalizeForSearch(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Convierte una cadena separada por comas (o arreglo) en lista limpia de palabras clave.
+ */
+export function parseKeywordsList(raw?: string | string[]): string[] {
+  if (!raw) return [];
+  const list = Array.isArray(raw) ? raw : raw.split(',');
+  return Array.from(
+    new Set(
+      list
+        .map((k) => k.trim())
+        .filter((k) => k.length >= 2)
+    )
+  );
+}
+
+/**
  * Detecta si una URL o Content-Type corresponde directamente a un documento PDF o Word (.docx / .doc).
  */
-export function detectDocumentType(urlStr: string, contentType = ''): 'pdf' | 'docx' | 'doc' | null {
+export function detectDocumentType(
+  urlStr: string,
+  contentType = '',
+  linkLabel = ''
+): 'pdf' | 'docx' | 'doc' | null {
   const lowerUrl = urlStr.split('?')[0].toLowerCase();
+  const lowerFullUrl = urlStr.toLowerCase();
   const lowerCt = contentType.toLowerCase();
+  const lowerLabel = linkLabel.toLowerCase();
 
-  if (lowerUrl.endsWith('.pdf') || lowerCt.includes('application/pdf')) {
+  if (
+    lowerUrl.endsWith('.pdf') ||
+    lowerCt.includes('application/pdf') ||
+    lowerFullUrl.includes('format=pdf') ||
+    lowerFullUrl.includes('tipo=pdf')
+  ) {
     return 'pdf';
   }
   if (
@@ -49,50 +99,115 @@ export function detectDocumentType(urlStr: string, contentType = ''): 'pdf' | 'd
   if (lowerUrl.endsWith('.doc') || lowerCt.includes('application/msword')) {
     return 'doc';
   }
+
+  // Detectar enlaces de descarga de bases/convocatorias en portales aunque no terminen en .pdf
+  if (
+    (lowerFullUrl.includes('descarga') ||
+      lowerFullUrl.includes('download') ||
+      lowerFullUrl.includes('archivo') ||
+      lowerFullUrl.includes('documento') ||
+      lowerFullUrl.includes('anexo') ||
+      lowerFullUrl.includes('bases') ||
+      lowerFullUrl.includes('convocatoria')) &&
+    (lowerLabel.includes('pdf') ||
+      lowerLabel.includes('bases') ||
+      lowerLabel.includes('convocatoria') ||
+      lowerLabel.includes('licitaci') ||
+      lowerLabel.includes('descargar') ||
+      lowerLabel.includes('documento') ||
+      lowerLabel.includes('anexo'))
+  ) {
+    if (lowerLabel.includes('word') || lowerLabel.includes('docx')) return 'docx';
+    return 'pdf';
+  }
+
   return null;
 }
 
 /**
- * Limpia HTML crudo a texto legible y extrae enlaces a archivos PDF / Word.
+ * Analiza bloques HTML (filas de tablas <tr>, artículos, tarjetas, bloques) buscando coincidencias ("hits")
+ * con las palabras clave indicadas y extrae los enlaces a documentos o subpáginas de cada hit.
  */
-function parseHtmlAndExtractAttachments(
+function analyzeHtmlWithKeywords(
   html: string,
-  baseUrl: string
-): { title: string; text: string; attachments: DiscoveredAttachment[] } {
+  baseUrl: string,
+  keywords: string[]
+): {
+  title: string;
+  text: string;
+  attachments: DiscoveredAttachment[];
+  keywordHits: KeywordHit[];
+  candidateDetailUrls: { url: string; matchedKeywords: string[]; snippet: string }[];
+} {
   const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
   const title = titleMatch ? titleMatch[1].replace(/\s+/g, ' ').trim() : baseUrl;
 
-  const attachments: DiscoveredAttachment[] = [];
-  const seenUrls = new Set<string>();
+  const cleanHtmlForBlocks = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ');
 
-  const linkRegex = /<a\s+[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
-  let match: RegExpExecArray | null;
-  while ((match = linkRegex.exec(html)) !== null) {
-    const rawHref = match[1].trim();
-    const rawLabel = match[2].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-    if (!rawHref || rawHref.startsWith('javascript:') || rawHref.startsWith('#')) continue;
+  const allAttachments: DiscoveredAttachment[] = [];
+  const seenAttachmentUrls = new Set<string>();
 
-    try {
-      const resolved = new URL(rawHref, baseUrl).toString();
-      const docType = detectDocumentType(resolved);
-      if (docType && !seenUrls.has(resolved)) {
-        seenUrls.add(resolved);
-        attachments.push({
-          url: resolved,
-          label: rawLabel || resolved.split('/').pop() || `Documento.${docType}`,
-          fileType: docType,
-        });
+  const extractLinksFromFragment = (
+    fragmentHtml: string
+  ): { docs: DiscoveredAttachment[]; detailLinks: { url: string; label: string }[] } => {
+    const docs: DiscoveredAttachment[] = [];
+    const detailLinks: { url: string; label: string }[] = [];
+    const linkRegex = /<a\s+[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+    let m: RegExpExecArray | null;
+
+    while ((m = linkRegex.exec(fragmentHtml)) !== null) {
+      const rawHref = m[1].trim().replace(/&amp;/g, '&');
+      const rawLabel = m[2].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      if (
+        !rawHref ||
+        rawHref.startsWith('javascript:') ||
+        rawHref.startsWith('#') ||
+        rawHref.startsWith('mailto:') ||
+        rawHref.startsWith('tel:')
+      ) {
+        continue;
       }
-    } catch {
-      // URL relativa inválida
+
+      try {
+        const resolved = new URL(rawHref, baseUrl).toString();
+        const docType = detectDocumentType(resolved, '', rawLabel);
+        if (docType) {
+          docs.push({
+            url: resolved,
+            label: rawLabel || decodeURIComponent(resolved.split('/').pop() || `Documento.${docType}`),
+            fileType: docType,
+          });
+        } else {
+          const parsedBase = new URL(baseUrl);
+          const parsedResolved = new URL(resolved);
+          if (parsedResolved.hostname === parsedBase.hostname && resolved !== baseUrl) {
+            detailLinks.push({
+              url: resolved,
+              label: rawLabel || resolved,
+            });
+          }
+        }
+      } catch {
+        // Ignorar URL malformada
+      }
+    }
+    return { docs, detailLinks };
+  };
+
+  // Extraer todos los adjuntos generales de la página
+  const globalLinks = extractLinksFromFragment(cleanHtmlForBlocks);
+  for (const doc of globalLinks.docs) {
+    if (!seenAttachmentUrls.has(doc.url)) {
+      seenAttachmentUrls.add(doc.url);
+      allAttachments.push(doc);
     }
   }
 
-  // Convertir HTML a texto limpio preservando saltos de línea de párrafos/bloques
-  const cleanedText = html
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
+  // Convertir HTML a texto limpio preservando saltos de línea
+  const cleanedText = cleanHtmlForBlocks
     .replace(/<\/(p|div|h1|h2|h3|h4|h5|h6|li|tr|section|article|br)>/gi, '\n')
     .replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;/gi, ' ')
@@ -104,21 +219,162 @@ function parseHtmlAndExtractAttachments(
     .replace(/\n\s*\n+/g, '\n\n')
     .trim();
 
-  return { title, text: cleanedText, attachments };
+  const keywordHits: KeywordHit[] = [];
+  const candidateDetailUrls: { url: string; matchedKeywords: string[]; snippet: string }[] = [];
+
+  if (keywords.length === 0) {
+    return {
+      title,
+      text: cleanedText,
+      attachments: allAttachments,
+      keywordHits,
+      candidateDetailUrls,
+    };
+  }
+
+  const normalizedKeywords = keywords.map((kw) => ({
+    original: kw,
+    norm: normalizeForSearch(kw),
+  }));
+
+  // Dividir el HTML en bloques lógicos de licitaciones: filas <tr>, items <li>, <article>, tarjetas <div>
+  const blockRegex = /<(tr|article|li|section)\b[^>]*>([\s\S]*?)<\/\1>/gi;
+  const matchedAttachmentsPriority: DiscoveredAttachment[] = [];
+  const seenSnippets = new Set<string>();
+  const seenDetailUrls = new Set<string>();
+
+  let blockMatch: RegExpExecArray | null;
+  while ((blockMatch = blockRegex.exec(cleanHtmlForBlocks)) !== null) {
+    const blockHtml = blockMatch[0];
+    const blockPlain = blockHtml
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    // Evitar bloques vacíos o contenedores gigantes que abarcan toda la página
+    if (blockPlain.length < 15 || blockPlain.length > 3500) continue;
+
+    const normBlock = normalizeForSearch(blockPlain);
+    const matchedKws = normalizedKeywords
+      .filter((k) => normBlock.includes(k.norm))
+      .map((k) => k.original);
+
+    if (matchedKws.length > 0) {
+      const snippet = blockPlain.slice(0, 320);
+      const snippetKey = normalizeForSearch(snippet.slice(0, 120));
+      if (seenSnippets.has(snippetKey)) continue;
+      seenSnippets.add(snippetKey);
+
+      const { docs, detailLinks } = extractLinksFromFragment(blockHtml);
+      const docUrls: string[] = [];
+
+      for (const d of docs) {
+        docUrls.push(d.url);
+        matchedAttachmentsPriority.push({
+          ...d,
+          matchedKeyword: matchedKws.join(', '),
+          fromHitContext: snippet.slice(0, 140),
+        });
+      }
+
+      const bestDetailLink = detailLinks[0]?.url;
+      if (bestDetailLink && !seenDetailUrls.has(bestDetailLink)) {
+        seenDetailUrls.add(bestDetailLink);
+        candidateDetailUrls.push({
+          url: bestDetailLink,
+          matchedKeywords: matchedKws,
+          snippet,
+        });
+      }
+
+      keywordHits.push({
+        matchedKeywords: matchedKws,
+        contextSnippet: snippet,
+        sourceUrl: baseUrl,
+        detailUrl: bestDetailLink,
+        documentUrls: docUrls,
+      });
+    }
+  }
+
+  // Si no se detectaron hits en bloques pequeños (<tr/li/article>), buscar en párrafos/líneas del texto general
+  if (keywordHits.length === 0) {
+    const paragraphs = cleanedText.split('\n').map((p) => p.trim()).filter((p) => p.length > 10);
+    for (const para of paragraphs) {
+      const normPara = normalizeForSearch(para);
+      const matchedKws = normalizedKeywords
+        .filter((k) => normPara.includes(k.norm))
+        .map((k) => k.original);
+
+      if (matchedKws.length > 0) {
+        const snippet = para.slice(0, 320);
+        const snippetKey = normalizeForSearch(snippet.slice(0, 120));
+        if (seenSnippets.has(snippetKey)) continue;
+        seenSnippets.add(snippetKey);
+
+        keywordHits.push({
+          matchedKeywords: matchedKws,
+          contextSnippet: snippet,
+          sourceUrl: baseUrl,
+          documentUrls: allAttachments.map((a) => a.url),
+        });
+
+        // Si el documento/página completa hizo hit, marcar todos sus documentos adjuntos con la palabra clave
+        for (const att of allAttachments) {
+          matchedAttachmentsPriority.push({
+            ...att,
+            matchedKeyword: matchedKws.join(', '),
+            fromHitContext: snippet.slice(0, 140),
+          });
+        }
+      }
+    }
+  }
+
+  // Ordenar adjuntos: primero los que pertenecen directamente a un "Hit" de palabra clave
+  const prioritizedAttachments: DiscoveredAttachment[] = [];
+  const seenPrioUrls = new Set<string>();
+
+  for (const d of matchedAttachmentsPriority) {
+    if (!seenPrioUrls.has(d.url)) {
+      seenPrioUrls.add(d.url);
+      prioritizedAttachments.push(d);
+    }
+  }
+  for (const d of allAttachments) {
+    if (!seenPrioUrls.has(d.url)) {
+      seenPrioUrls.add(d.url);
+      prioritizedAttachments.push(d);
+    }
+  }
+
+  return {
+    title,
+    text: cleanedText,
+    attachments: prioritizedAttachments,
+    keywordHits,
+    candidateDetailUrls,
+  };
 }
 
 /**
  * Servicio de navegación con Lightpanda Browser (https://github.com/lightpanda-io/browser)
  * Soporta:
- * 1. Servidor CDP Lightpanda (ws://127.0.0.1:9222) vía puppeteer-core (con soporte de auto-login en formularios y HTTP Basic Auth)
- * 2. Binario CLI Lightpanda (`lightpanda fetch --dump html <url>`)
- * 3. Detección automática de URLs que apuntan directamente a un archivo PDF o Word
+ * 1. Búsqueda activa de palabras clave separadas por coma ("mantenimiento", "desarrollo", "adquisición", etc.)
+ * 2. Seguimiento automático de "Hits" para localizar y traer el documento PDF/Word de la licitación
+ * 3. Autenticación (Usuario/Contraseña en formulario o Basic Auth)
  */
 export class LightpandaService {
   private cdpEndpoint = process.env.LIGHTPANDA_CDP_URL || 'ws://127.0.0.1:9222';
   private binaryPath = process.env.LIGHTPANDA_BIN || '/usr/local/bin/lightpanda';
 
-  async readTenderUrl(targetUrl: string, auth?: LightpandaAuthOptions): Promise<LightpandaPageResult> {
+  async readTenderUrl(
+    targetUrl: string,
+    auth?: LightpandaAuthOptions,
+    rawKeywords?: string | string[]
+  ): Promise<LightpandaPageResult> {
+    const keywords = parseKeywordsList(rawKeywords);
     const hasCredentials = Boolean(auth?.username && auth?.password);
     const basicAuthHeader = hasCredentials
       ? `Basic ${Buffer.from(`${auth!.username}:${auth!.password}`).toString('base64')}`
@@ -127,7 +383,7 @@ export class LightpandaService {
     let sessionCookieHeader: string | undefined;
     let authenticated = false;
 
-    // 1. Si hay credenciales (o no es archivo directo), intentar primero conexión a Lightpanda Browser vía CDP (ws://127.0.0.1:9222)
+    // 1. Intentar conexión a Lightpanda Browser vía CDP (ws://127.0.0.1:9222)
     try {
       const browser = await puppeteer.connect({
         browserWSEndpoint: this.cdpEndpoint,
@@ -143,13 +399,11 @@ export class LightpandaService {
           });
         }
 
-        // Si el usuario especificó una URL de login explícita, ir primero ahí para iniciar sesión
         if (hasCredentials && auth?.loginUrl) {
           await page.goto(auth.loginUrl, { waitUntil: 'domcontentloaded', timeout: 25000 });
           authenticated = await this.performFormLoginOnPage(page, auth.username!, auth.password!);
         }
 
-        // Verificar si la URL destino es directamente un archivo PDF/Word
         const directUrlType = detectDocumentType(targetUrl);
         if (directUrlType) {
           const cookies = await page.cookies();
@@ -173,22 +427,75 @@ export class LightpandaService {
                 fileType: directUrlType,
               },
             ],
+            keywordsSearched: keywords,
+            keywordHits: [],
             sessionCookieHeader,
             basicAuthHeader,
           };
         }
 
-        // Navegar a la URL objetivo de la licitación
         await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 25000 });
 
-        // Si hay credenciales y la página redirigió a un formulario de login (o contiene input[type="password"]), iniciar sesión
         if (hasCredentials && auth?.username && auth?.password) {
           const loggedInNow = await this.performFormLoginOnPage(page, auth.username, auth.password);
           if (loggedInNow) {
             authenticated = true;
-            // Si tras el login no estamos en targetUrl, volver a navegar a targetUrl ya con la sesión iniciada
             if (page.url() !== targetUrl) {
               await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => {});
+            }
+          }
+        }
+
+        let finalUrl = page.url() || targetUrl;
+        let html = await page.content();
+        let parsed = analyzeHtmlWithKeywords(html, finalUrl, keywords);
+
+        // Si el usuario especificó palabras clave y aún no hay ningún "hit" en la vista inicial,
+        // intentar usar el buscador interno de la página con Lightpanda
+        if (keywords.length > 0 && parsed.keywordHits.length === 0) {
+          const searchedInPage = await this.tryPortalSearchInput(page, keywords[0]);
+          if (searchedInPage) {
+            finalUrl = page.url() || finalUrl;
+            html = await page.content();
+            parsed = analyzeHtmlWithKeywords(html, finalUrl, keywords);
+          }
+        }
+
+        // Si hubo "Hits" de palabras clave pero el documento PDF/Word está dentro del enlace de detalle del Hit,
+        // Lightpanda entra automáticamente a las subpáginas de los Hits (hasta 3) para traer sus documentos PDF/Word
+        const extraTexts: string[] = [];
+        const hitDocsCount = parsed.attachments.filter((a) => Boolean(a.matchedKeyword)).length;
+
+        if (keywords.length > 0 && parsed.candidateDetailUrls.length > 0 && hitDocsCount === 0) {
+          for (const candidate of parsed.candidateDetailUrls.slice(0, 3)) {
+            try {
+              await page.goto(candidate.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+              const subUrl = page.url() || candidate.url;
+              const subHtml = await page.content();
+              const subParsed = analyzeHtmlWithKeywords(subHtml, subUrl, keywords);
+
+              if (subParsed.text) {
+                extraTexts.push(
+                  `=== DETALLE DE LICITACIÓN DETECTADA POR HIT [${candidate.matchedKeywords.join(', ')}] (${subUrl}) ===\n${subParsed.text}`
+                );
+              }
+
+              for (const subDoc of subParsed.attachments) {
+                if (!parsed.attachments.some((existing) => existing.url === subDoc.url)) {
+                  parsed.attachments.unshift({
+                    ...subDoc,
+                    matchedKeyword: candidate.matchedKeywords.join(', '),
+                    fromHitContext: candidate.snippet.slice(0, 140),
+                  });
+                }
+                // Asociar el documento encontrado al Hit correspondiente
+                const matchingHit = parsed.keywordHits.find((h) => h.detailUrl === candidate.url);
+                if (matchingHit && !matchingHit.documentUrls.includes(subDoc.url)) {
+                  matchingHit.documentUrls.push(subDoc.url);
+                }
+              }
+            } catch {
+              // Continuar con el siguiente hit
             }
           }
         }
@@ -198,11 +505,10 @@ export class LightpandaService {
           sessionCookieHeader = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
         }
 
-        const finalUrl = page.url() || targetUrl;
-        const html = await page.content();
         await page.close();
 
-        const parsed = parseHtmlAndExtractAttachments(html, finalUrl);
+        const combinedPageText = [parsed.text, ...extraTexts].filter(Boolean).join('\n\n');
+
         return {
           url: targetUrl,
           finalUrl,
@@ -210,8 +516,10 @@ export class LightpandaService {
           methodUsed: 'lightpanda_cdp',
           authenticated: authenticated || hasCredentials,
           isDirectDocumentUrl: false,
-          pageText: parsed.text,
+          pageText: combinedPageText,
           attachments: parsed.attachments,
+          keywordsSearched: keywords,
+          keywordHits: parsed.keywordHits,
           sessionCookieHeader,
           basicAuthHeader,
         };
@@ -241,12 +549,14 @@ export class LightpandaService {
             fileType: urlDocType,
           },
         ],
+        keywordsSearched: keywords,
+        keywordHits: [],
         sessionCookieHeader,
         basicAuthHeader,
       };
     }
 
-    // 3. Intentar CLI `lightpanda fetch --dump html <url>` (cuando no requiere login interactivo por formulario)
+    // 3. Intentar CLI `lightpanda fetch --dump html <url>` (cuando no requiere login interactivo)
     if (!hasCredentials) {
       for (const bin of [this.binaryPath, 'lightpanda']) {
         try {
@@ -255,7 +565,45 @@ export class LightpandaService {
             maxBuffer: 15 * 1024 * 1024,
           });
           if (stdout && stdout.trim().length > 0) {
-            const parsed = parseHtmlAndExtractAttachments(stdout, targetUrl);
+            const parsed = analyzeHtmlWithKeywords(stdout, targetUrl, keywords);
+
+            // Si hubo Hits con enlaces a páginas de detalle y sin PDF directo, seguir hasta 3 páginas de detalle con Lightpanda CLI
+            const extraTexts: string[] = [];
+            const hitDocsCount = parsed.attachments.filter((a) => Boolean(a.matchedKeyword)).length;
+            if (keywords.length > 0 && parsed.candidateDetailUrls.length > 0 && hitDocsCount === 0) {
+              for (const candidate of parsed.candidateDetailUrls.slice(0, 3)) {
+                try {
+                  const subOut = await execFileAsync(bin, ['fetch', '--dump', 'html', candidate.url], {
+                    timeout: 20000,
+                    maxBuffer: 10 * 1024 * 1024,
+                  });
+                  if (subOut.stdout) {
+                    const subParsed = analyzeHtmlWithKeywords(subOut.stdout, candidate.url, keywords);
+                    if (subParsed.text) {
+                      extraTexts.push(
+                        `=== DETALLE DE LICITACIÓN DETECTADA POR HIT [${candidate.matchedKeywords.join(', ')}] (${candidate.url}) ===\n${subParsed.text}`
+                      );
+                    }
+                    for (const subDoc of subParsed.attachments) {
+                      if (!parsed.attachments.some((existing) => existing.url === subDoc.url)) {
+                        parsed.attachments.unshift({
+                          ...subDoc,
+                          matchedKeyword: candidate.matchedKeywords.join(', '),
+                          fromHitContext: candidate.snippet.slice(0, 140),
+                        });
+                      }
+                      const matchingHit = parsed.keywordHits.find((h) => h.detailUrl === candidate.url);
+                      if (matchingHit && !matchingHit.documentUrls.includes(subDoc.url)) {
+                        matchingHit.documentUrls.push(subDoc.url);
+                      }
+                    }
+                  }
+                } catch {
+                  // Ignorar error en subpágina
+                }
+              }
+            }
+
             return {
               url: targetUrl,
               finalUrl: targetUrl,
@@ -263,8 +611,10 @@ export class LightpandaService {
               methodUsed: 'lightpanda_cli',
               authenticated: false,
               isDirectDocumentUrl: false,
-              pageText: parsed.text,
+              pageText: [parsed.text, ...extraTexts].filter(Boolean).join('\n\n'),
               attachments: parsed.attachments,
+              keywordsSearched: keywords,
+              keywordHits: parsed.keywordHits,
             };
           }
         } catch {
@@ -273,7 +623,7 @@ export class LightpandaService {
       }
     }
 
-    // 4. Fallback HTTP (con soporte de Basic Auth y envío de formulario si se proporcionaron credenciales)
+    // 4. Fallback HTTP (con seguimiento de Hits de palabras clave en subpáginas)
     const reqHeaders: Record<string, string> = {
       'User-Agent':
         'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Lightpanda/1.0 Chrome/124.0.0.0 Safari/537.36',
@@ -294,6 +644,7 @@ export class LightpandaService {
         .split(',')
         .map((c) => c.split(';')[0].trim())
         .join('; ');
+      reqHeaders['Cookie'] = sessionCookieHeader;
     }
 
     const contentType = res.headers.get('content-type') || '';
@@ -317,13 +668,66 @@ export class LightpandaService {
             fileType: detectedType,
           },
         ],
+        keywordsSearched: keywords,
+        keywordHits: [],
         sessionCookieHeader,
         basicAuthHeader,
       };
     }
 
     const html = await res.text();
-    const parsed = parseHtmlAndExtractAttachments(html, finalUrl);
+    const parsed = analyzeHtmlWithKeywords(html, finalUrl, keywords);
+
+    // Seguir subpáginas de Hits si no había link directo al PDF en la tabla principal
+    const extraTexts: string[] = [];
+    const hitDocsCount = parsed.attachments.filter((a) => Boolean(a.matchedKeyword)).length;
+    if (keywords.length > 0 && parsed.candidateDetailUrls.length > 0 && hitDocsCount === 0) {
+      for (const candidate of parsed.candidateDetailUrls.slice(0, 3)) {
+        try {
+          const subRes = await fetch(candidate.url, {
+            redirect: 'follow',
+            headers: reqHeaders,
+            signal: AbortSignal.timeout(15000),
+          });
+          if (subRes.ok) {
+            const subCt = subRes.headers.get('content-type') || '';
+            const subDocType = detectDocumentType(subRes.url || candidate.url, subCt);
+            if (subDocType) {
+              parsed.attachments.unshift({
+                url: subRes.url || candidate.url,
+                label: candidate.snippet.slice(0, 80) || 'Documento de licitación',
+                fileType: subDocType,
+                matchedKeyword: candidate.matchedKeywords.join(', '),
+                fromHitContext: candidate.snippet.slice(0, 140),
+              });
+            } else {
+              const subHtml = await subRes.text();
+              const subParsed = analyzeHtmlWithKeywords(subHtml, subRes.url || candidate.url, keywords);
+              if (subParsed.text) {
+                extraTexts.push(
+                  `=== DETALLE DE LICITACIÓN DETECTADA POR HIT [${candidate.matchedKeywords.join(', ')}] (${candidate.url}) ===\n${subParsed.text}`
+                );
+              }
+              for (const subDoc of subParsed.attachments) {
+                if (!parsed.attachments.some((existing) => existing.url === subDoc.url)) {
+                  parsed.attachments.unshift({
+                    ...subDoc,
+                    matchedKeyword: candidate.matchedKeywords.join(', '),
+                    fromHitContext: candidate.snippet.slice(0, 140),
+                  });
+                }
+                const matchingHit = parsed.keywordHits.find((h) => h.detailUrl === candidate.url);
+                if (matchingHit && !matchingHit.documentUrls.includes(subDoc.url)) {
+                  matchingHit.documentUrls.push(subDoc.url);
+                }
+              }
+            }
+          }
+        } catch {
+          // Ignorar error en subpágina
+        }
+      }
+    }
 
     return {
       url: targetUrl,
@@ -332,11 +736,57 @@ export class LightpandaService {
       methodUsed: 'http_fetch_fallback',
       authenticated: hasCredentials,
       isDirectDocumentUrl: false,
-      pageText: parsed.text,
+      pageText: [parsed.text, ...extraTexts].filter(Boolean).join('\n\n'),
       attachments: parsed.attachments,
+      keywordsSearched: keywords,
+      keywordHits: parsed.keywordHits,
       sessionCookieHeader,
       basicAuthHeader,
     };
+  }
+
+  /**
+   * Si la página tiene un buscador interno y aún no hubo hits visibles, escribe la palabra clave y ejecuta la búsqueda.
+   */
+  private async tryPortalSearchInput(page: any, keyword: string): Promise<boolean> {
+    try {
+      const searched = await page.evaluate((kw: string) => {
+        const searchInput = document.querySelector(
+          'input[type="search"], input[name*="search" i], input[name*="buscar" i], input[name*="palabra" i], input[placeholder*="buscar" i], input[placeholder*="palabra" i], input[id*="search" i], input[id*="buscar" i]'
+        ) as HTMLInputElement | null;
+
+        if (!searchInput) return false;
+
+        searchInput.focus();
+        searchInput.value = kw;
+        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+        searchInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+        const form = searchInput.closest('form');
+        if (form) {
+          const btn = form.querySelector('button[type="submit"], input[type="submit"], button:not([type="button"])') as HTMLElement | null;
+          if (btn) {
+            btn.click();
+          } else {
+            form.submit();
+          }
+        } else {
+          searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
+        }
+        return true;
+      }, keyword);
+
+      if (searched) {
+        await Promise.race([
+          page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 8000 }).catch(() => {}),
+          new Promise((resolve) => setTimeout(resolve, 2000)),
+        ]);
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -360,7 +810,6 @@ export class LightpandaService {
 
           const form = passInput.closest('form') || document.body;
 
-          // Buscar el input de usuario dentro del mismo formulario o documento
           const candidates = Array.from(
             form.querySelectorAll(
               'input[type="text"], input[type="email"], input[name*="user" i], input[name*="usuario" i], input[name*="login" i], input[name*="email" i], input[name*="correo" i], input[name*="rfc" i], input:not([type="hidden"]):not([type="password"]):not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"])'

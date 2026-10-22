@@ -1,7 +1,13 @@
+import fs from 'node:fs';
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { db } from '../../db/pool.js';
-import { lightpandaService } from '../scraper/lightpanda.service.js';
+import {
+  lightpandaService,
+  normalizeForSearch,
+  parseKeywordsList,
+  KeywordHit,
+} from '../scraper/lightpanda.service.js';
 import { documentProcessorService, ProcessedDocumentResult } from '../scraper/document-processor.service.js';
 import { claudeService } from '../llm/claude.service.js';
 import { TenderExtractionSchema, TaskNameSchema } from '../llm/llm.schemas.js';
@@ -10,9 +16,10 @@ export const tendersRouter = Router();
 
 const IngestUrlSchema = z.object({
   url: z.string().trim().url('Ingresa una URL válida (http:// o https://)'),
+  keywords: z.string().trim().optional().default(''),
   ocr_mode: z.enum(['auto', 'forzar_surya']).optional().default('auto'),
   process_attachments: z.boolean().optional().default(true),
-  max_attachments: z.coerce.number().int().min(1).max(10).optional().default(3),
+  max_attachments: z.coerce.number().int().min(1).max(10).optional().default(4),
   auth_username: z.string().trim().optional(),
   auth_password: z.string().optional(),
   auth_login_url: z.string().trim().optional(),
@@ -64,6 +71,7 @@ tendersRouter.get('/', async (_req: Request, res: Response) => {
          t.presupuesto_estimado, t.moneda, t.fecha_limite, t.nivel_riesgo,
          t.estado, t.metodo_navegacion, t.modelo_utilizado,
          t.tokens_utilizados, t.costo_estimado, t.latencia_total_ms,
+         t.keywords_buscadas, t.hits_encontrados,
          t.created_at,
          (SELECT COUNT(*)::int FROM tender_documents d WHERE d.tender_id = t.id) AS total_documentos
        FROM tenders t
@@ -79,6 +87,58 @@ tendersRouter.get('/', async (_req: Request, res: Response) => {
     res.status(500).json({
       ok: false,
       message: err?.message || 'Error al consultar el listado de licitaciones.',
+    });
+  }
+});
+
+/**
+ * GET /api/tenders/documents/:docId/download
+ * Permite abrir o descargar en nuestro portal el archivo PDF/Word traído por el scraper.
+ */
+tendersRouter.get('/documents/:docId/download', async (req: Request, res: Response) => {
+  const docId = Number(req.params.docId);
+  if (Number.isNaN(docId)) {
+    res.status(400).json({ ok: false, message: 'ID de documento inválido' });
+    return;
+  }
+
+  try {
+    const docRes = await db.query(
+      'SELECT file_name, file_type, local_path FROM tender_documents WHERE id = $1 LIMIT 1',
+      [docId]
+    );
+    if (docRes.rowCount === 0) {
+      res.status(404).json({ ok: false, message: 'Documento no encontrado' });
+      return;
+    }
+
+    const doc = docRes.rows[0];
+    if (!doc.local_path || !fs.existsSync(doc.local_path)) {
+      res.status(404).json({ ok: false, message: 'El archivo físico ya no se encuentra en el servidor.' });
+      return;
+    }
+
+    const mimeMap: Record<string, string> = {
+      pdf: 'application/pdf',
+      docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      doc: 'application/msword',
+    };
+
+    const contentType = mimeMap[doc.file_type] || 'application/octet-stream';
+    const dispositionType = doc.file_type === 'pdf' ? 'inline' : 'attachment';
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader(
+      'Content-Disposition',
+      `${dispositionType}; filename="${encodeURIComponent(doc.file_name)}"`
+    );
+
+    const stream = fs.createReadStream(doc.local_path);
+    stream.pipe(res);
+  } catch (err: any) {
+    res.status(500).json({
+      ok: false,
+      message: err?.message || 'Error al descargar el documento.',
     });
   }
 });
@@ -122,8 +182,8 @@ tendersRouter.get('/:id', async (req: Request, res: Response) => {
 /**
  * POST /api/tenders/ingest-url
  * Pipeline completo:
- * 1. Lee la URL con Lightpanda (o detecta archivo directo PDF/Word)
- * 2. Descarga PDF/Word y los procesa en Surya OCR / Mammoth
+ * 1. Lee la URL con Lightpanda, busca las palabras clave indicadas (separadas por coma) y sigue los "Hits"
+ * 2. Al detectar un "Hit", localiza y descarga el documento PDF/Word de la licitación a nuestro portal y lo procesa en Surya OCR / Mammoth
  * 3. Ejecuta motor de reglas locales
  * 4. Envía a Claude para extracción estructurada JSON + síntesis ejecutiva
  */
@@ -139,6 +199,7 @@ tendersRouter.post('/ingest-url', async (req: Request, res: Response) => {
 
   const {
     url,
+    keywords,
     ocr_mode,
     process_attachments,
     max_attachments,
@@ -146,19 +207,20 @@ tendersRouter.post('/ingest-url', async (req: Request, res: Response) => {
     auth_password,
     auth_login_url,
   } = parsed.data;
+
+  const keywordsList = parseKeywordsList(keywords);
   const startTotal = Date.now();
 
-  // Crear registro inicial en tenders
   const insertRes = await db.query<{ id: number }>(
-    `INSERT INTO tenders (source_url, titulo, estado)
-     VALUES ($1, $2, 'procesando')
+    `INSERT INTO tenders (source_url, titulo, estado, keywords_buscadas)
+     VALUES ($1, $2, 'procesando', $3)
      RETURNING id`,
-    [url, url]
+    [url, url, keywordsList.join(', ') || null]
   );
   const tenderId = insertRes.rows[0].id;
 
   try {
-    // PASO 1: Navegar URL con Lightpanda (incluyendo autenticación opcional si fue proporcionada)
+    // PASO 1: Navegar URL con Lightpanda, buscar palabras clave y seguir Hits
     const pageData = await lightpandaService.readTenderUrl(
       url,
       auth_username && auth_password
@@ -167,17 +229,26 @@ tendersRouter.post('/ingest-url', async (req: Request, res: Response) => {
             password: auth_password,
             loginUrl: auth_login_url || undefined,
           }
-        : undefined
+        : undefined,
+      keywordsList
     );
 
-    // PASO 2: Descargar y procesar documentos (PDF en Surya OCR / Word en Mammoth)
-    const processedDocs: ProcessedDocumentResult[] = [];
+    // Seleccionar documentos a descargar:
+    // Si se especificaron palabras clave y existen documentos asociados a un "Hit", priorizarlos
+    const hitSpecificAttachments = pageData.attachments.filter((a) => Boolean(a.matchedKeyword));
+    const candidateAttachments =
+      keywordsList.length > 0 && hitSpecificAttachments.length > 0
+        ? hitSpecificAttachments
+        : pageData.attachments;
+
     const attachmentsToProcess = process_attachments
-      ? pageData.attachments.slice(0, max_attachments)
+      ? candidateAttachments.slice(0, max_attachments)
       : pageData.isDirectDocumentUrl
-        ? pageData.attachments.slice(0, 1)
+        ? candidateAttachments.slice(0, 1)
         : [];
 
+    // PASO 2: Descargar documentos a nuestro portal y procesarlos en Surya OCR / Word
+    const processedDocs: ProcessedDocumentResult[] = [];
     for (const att of attachmentsToProcess) {
       try {
         const docResult = await documentProcessorService.downloadAndProcessDocument(
@@ -214,7 +285,54 @@ tendersRouter.post('/ingest-url', async (req: Request, res: Response) => {
       }
     }
 
-    // Consolidar el texto de la página (Lightpanda) + el texto extraído de documentos (Surya / Word)
+    // Verificar también Hits de palabras clave dentro del texto extraído de los documentos PDF/Word (por ejemplo cuando la URL era un PDF directo)
+    const allKeywordHits: KeywordHit[] = [...pageData.keywordHits];
+    if (keywordsList.length > 0 && processedDocs.length > 0) {
+      const normalizedKws = keywordsList.map((kw) => ({
+        original: kw,
+        norm: normalizeForSearch(kw),
+      }));
+
+      for (const doc of processedDocs) {
+        const normDocText = normalizeForSearch(doc.extractedText);
+        const matchedInDoc = normalizedKws
+          .filter((k) => normDocText.includes(k.norm))
+          .map((k) => k.original);
+
+        if (matchedInDoc.length > 0) {
+          // Buscar el primer fragmento del documento donde aparece la primera palabra clave
+          const firstNormKw = normalizeForSearch(matchedInDoc[0]);
+          const idx = normDocText.indexOf(firstNormKw);
+          const snippet =
+            idx >= 0
+              ? doc.extractedText.slice(Math.max(0, idx - 60), Math.min(doc.extractedText.length, idx + 240)).replace(/\s+/g, ' ').trim()
+              : doc.extractedText.slice(0, 260).replace(/\s+/g, ' ').trim();
+
+          allKeywordHits.push({
+            matchedKeywords: matchedInDoc,
+            contextSnippet: `[Documento ${doc.fileName}]: ${snippet}`,
+            sourceUrl: doc.sourceUrl,
+            documentUrls: [doc.sourceUrl],
+          });
+        }
+      }
+    }
+
+    // Consolidar el texto de la página (Lightpanda) + Hits + el texto extraído de documentos (Surya / Word)
+    const hitsSummaryText =
+      keywordsList.length > 0
+        ? allKeywordHits.length > 0
+          ? `=== COINCIDENCIAS ("HITS") DE PALABRAS CLAVE [${keywordsList.join(', ')}] ===\n` +
+            allKeywordHits
+              .map(
+                (h, i) =>
+                  `Hit #${i + 1} (Palabras: ${h.matchedKeywords.join(', ')}): ${h.contextSnippet}` +
+                  (h.documentUrls.length > 0 ? ` | Documentos: ${h.documentUrls.join(', ')}` : '')
+              )
+              .join('\n')
+          : `=== BÚSQUEDA DE PALABRAS CLAVE [${keywordsList.join(', ')}]: SIN COINCIDENCIAS ("0 HITS") EN LA PÁGINA ===`
+        : '';
+
     const docsCombinedText = processedDocs
       .map(
         (d, idx) =>
@@ -225,6 +343,7 @@ tendersRouter.post('/ingest-url', async (req: Request, res: Response) => {
     const fullConsolidatedText = [
       `URL ORIGEN: ${pageData.finalUrl}`,
       `TÍTULO PÁGINA: ${pageData.title}`,
+      hitsSummaryText,
       pageData.pageText ? `=== CONTENIDO DE LA PÁGINA WEB (LIGHTPANDA) ===\n${pageData.pageText}` : '',
       docsCombinedText ? `=== CONTENIDO EXTRAÍDO DE DOCUMENTOS (SURYA OCR / WORD) ===\n${docsCombinedText}` : '',
     ]
@@ -232,7 +351,11 @@ tendersRouter.post('/ingest-url', async (req: Request, res: Response) => {
       .join('\n\n');
 
     // PASO 3: Reglas deterministas locales
-    const localRules = runLocalRulesExtraction(fullConsolidatedText, pageData.title);
+    const localRules = {
+      ...runLocalRulesExtraction(fullConsolidatedText, pageData.title),
+      keywords_buscadas: keywordsList,
+      total_hits: allKeywordHits.length,
+    };
 
     // PASO 4: Enviar a Claude para Extracción Estructurada JSON (completar_campos) y Síntesis (resumen_licitacion)
     let structuredFields: any = null;
@@ -244,9 +367,14 @@ tendersRouter.post('/ingest-url', async (req: Request, res: Response) => {
     let fallbackReason: string | undefined;
 
     try {
+      const keywordInstruction =
+        keywordsList.length > 0
+          ? `\nIMPORTANTE: El usuario buscó específicamente las palabras clave: [${keywordsList.join(', ')}]. Prioriza la licitación y los documentos que hicieron "hit" con estas palabras clave.\n`
+          : '';
+
       const extractionRes = await claudeService.extractStructuredJson({
         tarea: 'completar_campos',
-        userPrompt: fullConsolidatedText,
+        userPrompt: keywordInstruction + fullConsolidatedText,
         toolName: 'extraer_campos_licitacion',
         toolDescription: 'Extrae los datos principales de la licitación a partir del contenido de la página y documentos OCR.',
         zodSchema: TenderExtractionSchema,
@@ -273,11 +401,14 @@ tendersRouter.post('/ingest-url', async (req: Request, res: Response) => {
           tarea: 'resumen_licitacion',
           userPrompt:
             `Analiza la siguiente información extraída de la URL (${pageData.finalUrl}) y sus documentos adjuntos procesados con Surya OCR.\n` +
+            (keywordsList.length > 0
+              ? `El usuario buscó específicamente las palabras clave: "${keywordsList.join(', ')}" (se detectaron ${allKeywordHits.length} coincidencias/hits).\n`
+              : '') +
             `Elabora una síntesis ejecutiva estructurada con:\n` +
-            `1. Objeto de la licitación y entidad convocante\n` +
-            `2. Presupuesto, moneda y plazos/fechas clave\n` +
-            `3. Requisitos técnicos, legales y financieros obligatorios\n` +
-            `4. Documentos/anexos analizados y observaciones relevantes.\n\n` +
+            `1. Coincidencias de palabras clave detectadas y objeto de la licitación\n` +
+            `2. Entidad convocante, presupuesto, moneda y plazos/fechas clave\n` +
+            `3. Requisitos técnicos, legales y financieros obligatorios extraídos del documento\n` +
+            `4. Documentos traídos al portal y observaciones relevantes.\n\n` +
             fullConsolidatedText,
           tenderId: `TND-${tenderId}`,
           documentId: processedDocs[0]?.fileName || 'WEB-PAGE',
@@ -331,8 +462,10 @@ tendersRouter.post('/ingest-url', async (req: Request, res: Response) => {
         tokens_utilizados = $15,
         costo_estimado = $16,
         latencia_total_ms = $17,
+        keywords_buscadas = $18,
+        hits_encontrados = $19::jsonb,
         updated_at = NOW()
-       WHERE id = $18`,
+       WHERE id = $20`,
       [
         finalTitle.slice(0, 295),
         finalEntidad ? String(finalEntidad).slice(0, 250) : null,
@@ -351,6 +484,8 @@ tendersRouter.post('/ingest-url', async (req: Request, res: Response) => {
         totalTokens,
         Number(totalCostUsd.toFixed(6)),
         totalLatencyMs,
+        keywordsList.join(', ') || null,
+        JSON.stringify(allKeywordHits),
         tenderId,
       ]
     );
@@ -365,6 +500,8 @@ tendersRouter.post('/ingest-url', async (req: Request, res: Response) => {
       tender: updatedTender.rows[0],
       documents: savedDocs.rows,
       discovered_attachments: pageData.attachments,
+      keywords_searched: keywordsList,
+      keyword_hits: allKeywordHits,
       fallback_used: fallbackUsed,
       fallback_reason: fallbackReason,
     });
