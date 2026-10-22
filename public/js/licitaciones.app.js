@@ -10,6 +10,7 @@
     activeViewerDocId: null,
     viewerOpen: false,
     tendersList: [],
+    lastKnownLatestId: null,
   };
 
   const TAB_MAP = {
@@ -84,21 +85,32 @@
     }
   }
 
-  async function loadTendersHistory() {
+  async function loadTendersHistory(isBackgroundPoll = false) {
     try {
       const res = await fetch('/api/tenders');
       const data = await res.json();
       if (!data.ok) return;
 
+      const latestId = data.latest_id || null;
+      if (isBackgroundPoll && state.lastKnownLatestId !== null && latestId !== null && latestId > state.lastKnownLatestId) {
+        showAlert('¡Se detectaron nuevas licitaciones automáticamente desde tus Fuentes de Interés!', 'info');
+      }
+      if (latestId !== null) {
+        state.lastKnownLatestId = latestId;
+      }
+
       state.tendersList = data.tenders || [];
       const countBadge = document.getElementById('tendersCountBadge');
-      if (countBadge) countBadge.textContent = String(state.tendersList.length);
+      if (countBadge) {
+        const newCount = Number(data.new_count || 0);
+        countBadge.textContent = newCount > 0 ? `${state.tendersList.length} (${newCount} nuevas)` : String(state.tendersList.length);
+      }
 
       const tbody = document.getElementById('tendersHistoryTableBody');
       if (!tbody) return;
 
       if (state.tendersList.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" class="text-center text-secondary py-4">Aún no se ha extraído ninguna licitación. Ingresa una URL arriba.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center text-secondary py-4">Aún no se ha extraído ninguna licitación. Ingresa una URL arriba o configura una Fuente de Interés.</td></tr>`;
         return;
       }
 
@@ -107,12 +119,18 @@
           const presupuestoStr = t.presupuesto_estimado
             ? `$${Number(t.presupuesto_estimado).toLocaleString()} ${t.moneda || 'MXN'}`
             : '-';
+          const nuevaBadge = t.es_nueva
+            ? `<span class="badge bg-success ms-1">NUEVA</span>`
+            : '';
+          const sourceBadge = t.source_nombre
+            ? `<span class="badge bg-primary-subtle text-primary border border-primary-subtle me-1"><i class="bi bi-globe2 me-1"></i>${t.source_nombre}</span>`
+            : '';
           return `<tr>
-            <td><strong>#${t.id}</strong></td>
+            <td><strong>#${t.id}</strong>${nuevaBadge}</td>
             <td class="text-nowrap">${new Date(t.created_at).toLocaleString()}</td>
             <td>
               <div class="fw-bold text-dark text-truncate" style="max-width: 280px;">${t.titulo || t.source_url}</div>
-              <a href="${t.source_url}" target="_blank" class="small text-secondary text-truncate d-block" style="max-width: 280px;">${t.source_url}</a>
+              <div class="mt-1">${sourceBadge}<a href="${t.source_url}" target="_blank" class="small text-secondary text-truncate d-inline-block align-bottom" style="max-width: 220px;">${t.source_url}</a></div>
             </td>
             <td>${t.entidad || '-'}</td>
             <td class="text-end fw-bold">${presupuestoStr}</td>
@@ -131,14 +149,19 @@
         .join('');
 
       tbody.querySelectorAll('.btn-view-tender').forEach((btn) => {
-        btn.addEventListener('click', () => loadSingleTender(Number(btn.getAttribute('data-id')), true));
+        btn.addEventListener('click', async () => {
+          const id = Number(btn.getAttribute('data-id'));
+          await fetch(`/api/tenders/${id}/mark-seen`, { method: 'POST' }).catch(() => {});
+          await loadSingleTender(id, true);
+          await loadTendersHistory(false);
+        });
       });
 
       tbody.querySelectorAll('.btn-delete-tender').forEach((btn) => {
         btn.addEventListener('click', async () => {
           const id = Number(btn.getAttribute('data-id'));
           await fetch(`/api/tenders/${id}`, { method: 'DELETE' });
-          await loadTendersHistory();
+          await loadTendersHistory(false);
         });
       });
 
@@ -505,7 +528,7 @@
     }
 
     document.getElementById('ingestUrlForm')?.addEventListener('submit', handleIngestSubmit);
-    document.getElementById('btnRefreshTenders')?.addEventListener('click', loadTendersHistory);
+    document.getElementById('btnRefreshTenders')?.addEventListener('click', () => loadTendersHistory(false));
     document.getElementById('btnCloseInlineViewer')?.addEventListener('click', closeInlinePdfViewer);
 
     const authSwitch = document.getElementById('requiresAuthSwitch');
@@ -526,6 +549,11 @@
     });
 
     loadPipelineStatus();
-    loadTendersHistory();
+    loadTendersHistory(false);
+
+    // Refresco automático cada 30s para detectar nuevas licitaciones del agente
+    setInterval(() => {
+      loadTendersHistory(true);
+    }, 30000);
   });
 })();

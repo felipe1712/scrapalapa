@@ -8,6 +8,8 @@ import { seedInitialLlmConfig } from './db/seed.js';
 import { llmConfigCache } from './modules/llm/config.cache.js';
 import { llmSettingsRouter, llmPublicRouter } from './modules/llm/llm.routes.js';
 import { tendersRouter } from './modules/tenders/tenders.routes.js';
+import { sourcesRouter } from './modules/sources/sources.routes.js';
+import { sourcesSchedulerService } from './modules/sources/scheduler.service.js';
 import { workerInstance } from './worker/index.js';
 
 export async function createServerApp() {
@@ -15,6 +17,7 @@ export async function createServerApp() {
   await seedInitialLlmConfig();
   await llmConfigCache.initListener();
   await workerInstance.start();
+  sourcesSchedulerService.startScheduler(60_000);
 
   const app = express();
   app.use(cors());
@@ -36,6 +39,9 @@ export async function createServerApp() {
 
   // Rutas de ingesta y análisis de licitaciones por URL (Lightpanda + Surya + Claude)
   app.use('/api/tenders', tendersRouter);
+
+  // Rutas de administración y monitoreo automático de Fuentes de Interés (/api/sources/*)
+  app.use('/api/sources', sourcesRouter);
 
   // Redirección raíz a Licitaciones & Pipeline
   app.get('/', (_req, res) => {

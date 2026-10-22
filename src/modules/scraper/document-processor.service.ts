@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import mammoth from 'mammoth';
+import { db } from '../../db/pool.js';
 import { claudeService } from '../llm/claude.service.js';
 
 const execFileAsync = promisify(execFile);
@@ -93,6 +94,34 @@ export class DocumentProcessorService {
     const localPath = path.join(this.docsDir, finalFileName);
 
     fs.writeFileSync(localPath, buffer);
+
+    // Caché de OCR: si este mismo archivo exacto (mismo hash SHA-256) ya fue procesado con éxito antes, reutilizar su texto OCR
+    if (ocrMode === 'auto') {
+      try {
+        const cachedDoc = await db.query(
+          `SELECT metodo_extraccion, paginas_procesadas, texto_extraido
+           FROM tender_documents
+           WHERE local_path = $1 AND LENGTH(texto_extraido) > 250
+           ORDER BY id DESC LIMIT 1`,
+          [localPath]
+        );
+        if (cachedDoc.rowCount && cachedDoc.rowCount > 0) {
+          const row = cachedDoc.rows[0];
+          return {
+            fileName: rawName,
+            sourceUrl: fileUrl,
+            fileType: resolvedType,
+            fileSizeBytes: buffer.length,
+            localPath,
+            extractionMethod: row.metodo_extraccion,
+            pagesProcessed: Number(row.paginas_procesadas || 1),
+            extractedText: row.texto_extraido,
+          };
+        }
+      } catch {
+        // Continuar con extracción normal
+      }
+    }
 
     if (resolvedType === 'docx' || resolvedType === 'doc') {
       return this.processWordDocument(localPath, rawName, fileUrl, resolvedType, buffer.length);
