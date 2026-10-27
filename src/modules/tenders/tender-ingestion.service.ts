@@ -22,6 +22,28 @@ export interface IngestTenderInput {
   sourceId?: number;
   defaultEntidad?: string;
   skipIfDuplicate?: boolean;
+  tenantId?: number;
+  origenTipo?: 'url' | 'source' | 'email';
+  emailAccountId?: number;
+}
+
+export interface IngestEmailTenderInput {
+  tenantId: number;
+  emailAccountId: number;
+  emailAccountName: string;
+  messageId: string;
+  subject: string;
+  fromAddress: string;
+  receivedAt?: Date;
+  bodyText: string;
+  keywords?: string | string[];
+  usarLightpandaLinks?: boolean;
+  attachments: Array<{
+    fileName: string;
+    contentType: string;
+    buffer: Buffer;
+  }>;
+  extractedUrls: string[];
 }
 
 /**
@@ -107,6 +129,9 @@ export class TenderIngestionService {
       sourceId,
       defaultEntidad,
       skipIfDuplicate = false,
+      tenantId = 1,
+      origenTipo = sourceId ? 'source' : 'url',
+      emailAccountId,
     } = input;
 
     const keywordsList = parseKeywordsList(keywords);
@@ -160,8 +185,8 @@ export class TenderIngestionService {
 
     if (skipIfDuplicate) {
       const existingCheck = await db.query(
-        'SELECT id, titulo FROM tenders WHERE dedup_hash = $1 LIMIT 1',
-        [preDedupHash]
+        'SELECT id, titulo FROM tenders WHERE dedup_hash = $1 AND tenant_id = $2 LIMIT 1',
+        [preDedupHash, tenantId]
       );
       if (existingCheck.rowCount && existingCheck.rowCount > 0) {
         return {
@@ -178,10 +203,19 @@ export class TenderIngestionService {
 
     // Crear registro en tenders
     const insertRes = await db.query<{ id: number }>(
-      `INSERT INTO tenders (source_url, titulo, entidad, estado, keywords_buscadas, source_id, es_nueva)
-       VALUES ($1, $2, $3, 'procesando', $4, $5, true)
+      `INSERT INTO tenders (source_url, titulo, entidad, estado, keywords_buscadas, source_id, es_nueva, tenant_id, origen_tipo, email_account_id)
+       VALUES ($1, $2, $3, 'procesando', $4, $5, true, $6, $7, $8)
        RETURNING id`,
-      [url, pageData.title.slice(0, 295) || url, defaultEntidad || null, keywordsList.join(', ') || null, sourceId || null]
+      [
+        url,
+        pageData.title.slice(0, 295) || url,
+        defaultEntidad || null,
+        keywordsList.join(', ') || null,
+        sourceId || null,
+        tenantId,
+        origenTipo,
+        emailAccountId || null,
+      ]
     );
     const tenderId = insertRes.rows[0].id;
 
@@ -485,6 +519,312 @@ export class TenderIngestionService {
         duplicateTendersCount: 0,
         fallback_used: fallbackUsed,
         fallback_reason: fallbackReason,
+      };
+    } catch (err: any) {
+      const totalLatencyMs = Date.now() - startTotal;
+      await db.query(
+        `UPDATE tenders SET estado = 'error', error_detalle = $1, latencia_total_ms = $2, updated_at = NOW() WHERE id = $3`,
+        [err?.message || String(err), totalLatencyMs, tenderId]
+      );
+      throw err;
+    }
+  }
+
+  /**
+   * Ingesta una licitación proveniente de un correo electrónico monitoreado ("Correo E").
+   * Procesa los archivos adjuntos (.pdf, .docx, .doc) con Surya OCR / Visión, y opcionalmente
+   * usa Lightpanda para navegar los enlaces de licitación incluidos dentro del cuerpo del correo.
+   */
+  async ingestFromEmailMessage(input: IngestEmailTenderInput) {
+    const startTotal = Date.now();
+    const keywordsList = parseKeywordsList(input.keywords);
+    const sourceUrlLabel =
+      input.extractedUrls[0] || `mailto:${input.fromAddress}?subject=${encodeURIComponent(input.subject.slice(0, 80))}`;
+
+    const preRules = runLocalRulesExtraction(
+      `${input.subject}\n${input.bodyText}`,
+      input.subject || 'Licitación recibida por Correo E'
+    );
+
+    const preDedupHash = computeTenderDedupHash({
+      numeroExpediente: preRules.expediente_detectado,
+      titulo: input.subject,
+      entidad: input.fromAddress,
+      sourceUrl: sourceUrlLabel,
+      hitsSignature: input.messageId,
+    });
+
+    const existingCheck = await db.query(
+      'SELECT id FROM tenders WHERE dedup_hash = $1 AND tenant_id = $2 LIMIT 1',
+      [preDedupHash, input.tenantId]
+    );
+    if ((existingCheck.rowCount ?? 0) > 0) {
+      return {
+        ok: true,
+        skippedDuplicate: true,
+        tenderId: existingCheck.rows[0].id,
+        linksScrapedCount: 0,
+      };
+    }
+
+    const insertRes = await db.query<{ id: number }>(
+      `INSERT INTO tenders (
+        source_url, titulo, entidad, estado, keywords_buscadas, es_nueva,
+        tenant_id, origen_tipo, email_account_id
+      ) VALUES ($1, $2, $3, 'procesando', $4, true, $5, 'email', $6)
+      RETURNING id`,
+      [
+        sourceUrlLabel.slice(0, 990),
+        (input.subject || 'Licitación por Correo E').slice(0, 295),
+        input.fromAddress.slice(0, 250),
+        keywordsList.join(', ') || null,
+        input.tenantId,
+        input.emailAccountId,
+      ]
+    );
+    const tenderId = insertRes.rows[0].id;
+
+    try {
+      const processedDocs: ProcessedDocumentResult[] = [];
+      let linksScrapedCount = 0;
+
+      // 1. Procesar adjuntos directos del correo (.pdf, .docx, .doc) con Surya OCR / Visión
+      for (const att of input.attachments.slice(0, 8)) {
+        try {
+          const docRes = await documentProcessorService.processDocumentBuffer(
+            att.buffer,
+            att.fileName,
+            `correo:${input.fromAddress}/${att.fileName}`,
+            'auto'
+          );
+          processedDocs.push(docRes);
+
+          await db.query(
+            `INSERT INTO tender_documents (
+              tender_id, file_name, source_url, file_type,
+              file_size_bytes, local_path, metodo_extraccion,
+              paginas_procesadas, texto_extraido
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            [
+              tenderId,
+              docRes.fileName,
+              docRes.sourceUrl,
+              docRes.fileType,
+              docRes.fileSizeBytes,
+              docRes.localPath,
+              docRes.extractionMethod,
+              docRes.pagesProcessed,
+              docRes.extractedText,
+            ]
+          );
+        } catch (attErr: any) {
+          console.warn(`[EmailIngest] Error al procesar adjunto ${att.fileName}:`, attErr?.message);
+        }
+      }
+
+      // 2. Si el correo incluye enlaces (URLs) y está activo usar_lightpanda_links, navegar con Lightpanda para traer documentos
+      let scrapedWebText = '';
+      if (input.usarLightpandaLinks !== false && input.extractedUrls.length > 0) {
+        for (const linkUrl of input.extractedUrls.slice(0, 2)) {
+          try {
+            const pageData = await lightpandaService.readTenderUrl(linkUrl, undefined, keywordsList);
+            linksScrapedCount += 1;
+            if (pageData.pageText) {
+              scrapedWebText += `\n=== PÁGINA VINCULADA EN EL CORREO (${linkUrl}) ===\n${pageData.pageText.slice(0, 15000)}\n`;
+            }
+            for (const webAtt of pageData.attachments.slice(0, 4)) {
+              try {
+                const docResult = await documentProcessorService.downloadAndProcessDocument(
+                  webAtt.url,
+                  webAtt.fileType,
+                  'auto'
+                );
+                processedDocs.push(docResult);
+                await db.query(
+                  `INSERT INTO tender_documents (
+                    tender_id, file_name, source_url, file_type,
+                    file_size_bytes, local_path, metodo_extraccion,
+                    paginas_procesadas, texto_extraido
+                  ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+                  [
+                    tenderId,
+                    docResult.fileName,
+                    docResult.sourceUrl,
+                    docResult.fileType,
+                    docResult.fileSizeBytes,
+                    docResult.localPath,
+                    docResult.extractionMethod,
+                    docResult.pagesProcessed,
+                    docResult.extractedText,
+                  ]
+                );
+              } catch {
+                // Continuar
+              }
+            }
+          } catch (lpErr: any) {
+            console.warn(`[EmailIngest] Aviso al navegar enlace ${linkUrl} con Lightpanda:`, lpErr?.message);
+          }
+        }
+      }
+
+      const docsCombinedText = processedDocs
+        .map(
+          (d, idx) =>
+            `=== DOCUMENTO ADJUNTO ${idx + 1}: ${d.fileName} (Método: ${d.extractionMethod}, Páginas: ${d.pagesProcessed}) ===\n${d.extractedText}`
+        )
+        .join('\n\n');
+
+      const fullConsolidatedText = [
+        `ORIGEN: Correo Electrónico (${input.emailAccountName})`,
+        `REMITENTE: ${input.fromAddress}`,
+        `ASUNTO: ${input.subject}`,
+        `FECHA RECEPCIÓN: ${input.receivedAt ? input.receivedAt.toISOString() : new Date().toISOString()}`,
+        `=== CUERPO DEL CORREO ===\n${input.bodyText}`,
+        scrapedWebText,
+        docsCombinedText ? `=== DOCUMENTOS EXTRAÍDOS CON OCR ===\n${docsCombinedText}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n\n');
+
+      const localRules = {
+        ...runLocalRulesExtraction(fullConsolidatedText, input.subject),
+        keywords_buscadas: keywordsList,
+        total_hits: processedDocs.length + linksScrapedCount,
+      };
+
+      let structuredFields: any = null;
+      let claudeSynthesis: string | null = null;
+      let modelUsed = 'local_rules';
+      let totalTokens = 0;
+      let totalCostUsd = 0;
+
+      try {
+        const extractionRes = await claudeService.extractStructuredJson({
+          tarea: 'completar_campos',
+          userPrompt: fullConsolidatedText,
+          toolName: 'extraer_campos_licitacion',
+          toolDescription: 'Extrae los datos principales de la licitación recibida por correo electrónico y sus adjuntos OCR.',
+          zodSchema: TenderExtractionSchema,
+          tenderId: `TND-${tenderId}`,
+          documentId: processedDocs[0]?.fileName || 'EMAIL-BODY',
+        });
+
+        if (extractionRes.ok && extractionRes.data) {
+          structuredFields = extractionRes.data;
+          modelUsed = extractionRes.model;
+          totalTokens +=
+            extractionRes.usage.inputTokens +
+            extractionRes.usage.outputTokens +
+            extractionRes.usage.cacheCreationInputTokens +
+            extractionRes.usage.cacheReadInputTokens;
+          totalCostUsd += extractionRes.usage.estimatedCostUsd;
+        }
+      } catch (e: any) {
+        console.warn('[EmailIngest] Aviso en extracción estructurada:', e?.message);
+      }
+
+      try {
+        const synthesisRes = await claudeService.generateTaskText({
+          tarea: 'resumen_licitacion',
+          userPrompt:
+            `Analiza la siguiente licitación recibida por correo electrónico (Remitente: ${input.fromAddress}, Asunto: "${input.subject}").\n` +
+            `Elabora una síntesis ejecutiva estructurada con:\n` +
+            `1. Objeto de la licitación y resumen del correo recibido\n` +
+            `2. Entidad convocante, número de procedimiento, presupuesto/costo de bases y fechas clave\n` +
+            `3. Requisitos técnicos, legales y financieros obligatorios extraídos de los adjuntos\n` +
+            `4. Documentos adjuntos procesados y observaciones relevantes.\n\n` +
+            fullConsolidatedText,
+          tenderId: `TND-${tenderId}`,
+          documentId: processedDocs[0]?.fileName || 'EMAIL-BODY',
+        });
+
+        if (synthesisRes.ok && synthesisRes.data) {
+          claudeSynthesis = synthesisRes.data;
+          modelUsed = synthesisRes.model;
+          totalTokens +=
+            synthesisRes.usage.inputTokens +
+            synthesisRes.usage.outputTokens +
+            synthesisRes.usage.cacheCreationInputTokens +
+            synthesisRes.usage.cacheReadInputTokens;
+          totalCostUsd += synthesisRes.usage.estimatedCostUsd;
+        }
+      } catch (e: any) {
+        console.warn('[EmailIngest] Aviso en síntesis Claude:', e?.message);
+      }
+
+      const totalLatencyMs = Date.now() - startTotal;
+      const finalTitle = structuredFields?.titulo_licitacion || input.subject || 'Licitación por Correo E';
+      const finalEntidad = structuredFields?.entidad_convocante || input.fromAddress;
+      const finalExpediente = localRules.expediente_detectado || null;
+      const finalPresupuesto =
+        structuredFields?.presupuesto_estimado ?? localRules.monto_principal ?? null;
+      const finalMoneda = structuredFields?.moneda || 'MXN';
+      const finalFecha =
+        structuredFields?.fecha_limite_propuestas || localRules.fecha_principal || null;
+      const finalRiesgo = structuredFields?.nivel_riesgo || null;
+
+      const emailHitItem: KeywordHit = {
+        matchedKeywords: keywordsList.length > 0 ? keywordsList.slice(0, 3) : ['correo'],
+        contextSnippet: `[📧 Correo de ${input.fromAddress}] ${input.subject}`,
+        sourceUrl: sourceUrlLabel,
+        documentUrls: processedDocs.map((d) => d.sourceUrl),
+      };
+
+      await db.query(
+        `UPDATE tenders SET
+          titulo = $1,
+          entidad = $2,
+          numero_expediente = $3,
+          presupuesto_estimado = $4,
+          moneda = $5,
+          fecha_limite = $6,
+          nivel_riesgo = $7,
+          estado = 'completado',
+          metodo_navegacion = $8,
+          contenido_pagina_texto = $9,
+          texto_documentos_ocr = $10,
+          extraccion_reglas_locales = $11::jsonb,
+          campos_extraidos_json = $12::jsonb,
+          sintesis_claude = $13,
+          modelo_utilizado = $14,
+          tokens_utilizados = $15,
+          costo_estimado = $16,
+          latencia_total_ms = $17,
+          hits_encontrados = $18::jsonb,
+          dedup_hash = $19,
+          updated_at = NOW()
+         WHERE id = $20`,
+        [
+          finalTitle.slice(0, 295),
+          String(finalEntidad).slice(0, 250),
+          finalExpediente ? String(finalExpediente).slice(0, 145) : null,
+          finalPresupuesto,
+          finalMoneda,
+          finalFecha ? String(finalFecha).slice(0, 75) : null,
+          finalRiesgo,
+          linksScrapedCount > 0 ? 'imap+lightpanda' : 'imap_direct',
+          input.bodyText + (scrapedWebText ? `\n\n${scrapedWebText}` : ''),
+          docsCombinedText,
+          JSON.stringify(localRules),
+          structuredFields ? JSON.stringify(structuredFields) : null,
+          claudeSynthesis,
+          modelUsed,
+          totalTokens,
+          Number(totalCostUsd.toFixed(6)),
+          totalLatencyMs,
+          JSON.stringify([emailHitItem]),
+          preDedupHash,
+          tenderId,
+        ]
+      );
+
+      return {
+        ok: true,
+        skippedDuplicate: false,
+        tenderId,
+        attachmentsProcessed: processedDocs.length,
+        linksScrapedCount,
       };
     } catch (err: any) {
       const totalLatencyMs = Date.now() - startTotal;

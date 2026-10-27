@@ -130,6 +130,71 @@ export class DocumentProcessorService {
     return this.processPdfWithOcr(localPath, rawName, fileUrl, buffer, ocrMode);
   }
 
+  /**
+   * Procesa un archivo PDF o Word directamente desde un Buffer en memoria (ej. adjunto de correo electrónico),
+   * lo almacena en ./data/documents y ejecuta OCR / Mammoth.
+   */
+  async processDocumentBuffer(
+    buffer: Buffer,
+    rawFileName: string,
+    sourceLabel: string,
+    ocrMode: 'auto' | 'forzar_surya' = 'auto'
+  ): Promise<ProcessedDocumentResult> {
+    let resolvedType: 'pdf' | 'docx' | 'doc' = 'pdf';
+    const lowerName = (rawFileName || '').toLowerCase();
+    if (buffer.length >= 4 && buffer.subarray(0, 4).toString('ascii') === '%PDF') {
+      resolvedType = 'pdf';
+    } else if (buffer.length >= 4 && buffer[0] === 0x50 && buffer[1] === 0x4b) {
+      resolvedType = 'docx';
+    } else if (buffer.length >= 4 && buffer[0] === 0xd0 && buffer[1] === 0xcf) {
+      resolvedType = 'doc';
+    } else if (lowerName.endsWith('.docx')) {
+      resolvedType = 'docx';
+    } else if (lowerName.endsWith('.doc')) {
+      resolvedType = 'doc';
+    }
+
+    const hash = crypto.createHash('sha256').update(buffer).digest('hex').slice(0, 12);
+    const safeName = (rawFileName || `adjunto.${resolvedType}`).replace(/[^a-zA-Z0-9._-]/g, '_');
+    const finalFileName = `${hash}_${safeName.endsWith(`.${resolvedType}`) ? safeName : `${safeName}.${resolvedType}`}`;
+    const localPath = path.join(this.docsDir, finalFileName);
+
+    fs.writeFileSync(localPath, buffer);
+
+    if (ocrMode === 'auto') {
+      try {
+        const cachedDoc = await db.query(
+          `SELECT metodo_extraccion, paginas_procesadas, texto_extraido
+           FROM tender_documents
+           WHERE local_path = $1 AND LENGTH(texto_extraido) > 250
+           ORDER BY id DESC LIMIT 1`,
+          [localPath]
+        );
+        if (cachedDoc.rowCount && cachedDoc.rowCount > 0) {
+          const row = cachedDoc.rows[0];
+          return {
+            fileName: rawFileName,
+            sourceUrl: sourceLabel,
+            fileType: resolvedType,
+            fileSizeBytes: buffer.length,
+            localPath,
+            extractionMethod: row.metodo_extraccion,
+            pagesProcessed: Number(row.paginas_procesadas || 1),
+            extractedText: row.texto_extraido,
+          };
+        }
+      } catch {
+        // Continuar
+      }
+    }
+
+    if (resolvedType === 'docx' || resolvedType === 'doc') {
+      return this.processWordDocument(localPath, rawFileName, sourceLabel, resolvedType, buffer.length);
+    }
+
+    return this.processPdfWithOcr(localPath, rawFileName, sourceLabel, buffer, ocrMode);
+  }
+
   private async processWordDocument(
     localPath: string,
     fileName: string,

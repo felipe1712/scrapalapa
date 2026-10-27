@@ -235,6 +235,11 @@
                         <i class="bi bi-clock-history me-1"></i> Historial de Cambios
                     </a>
                 </li>
+                <li class="nav-item" role="presentation">
+                    <a class="nav-link" id="tab-email-btn" href="#correo-e" data-tab-target="#tab-email" role="tab">
+                        <i class="bi bi-envelope-paper me-1"></i> Correo E
+                    </a>
+                </li>
             </ul>
 
             <div class="tab-content" id="llmAdminTabsContent">
@@ -767,6 +772,188 @@
                     </div>
                 </div>
 
+                <!-- ===================================================================== -->
+                <!-- PESTAÑA 5: CORREO E (MONITOREO AUTOMÁTICO DE BUZÓN CADA 24 HORAS)     -->
+                <!-- ===================================================================== -->
+                <div class="tab-pane fade" id="tab-email" role="tabpanel">
+                    <div class="row">
+                        <div class="col-12 col-xl-7 mb-4">
+                            <div class="card border-0 shadow-sm h-100">
+                                <div class="card-header bg-none border-0 pt-3 pb-0 d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <h6 class="title mb-1"><i class="bi bi-envelope-check text-primary me-2"></i>Cuenta de Correo Monitoreada ("Correo E")</h6>
+                                        <p class="small text-secondary mb-0">
+                                            Revisa automáticamente cada 24 horas los correos nuevos desde la última revisión, extrae adjuntos PDF/Word o enlaces con Lightpanda y los presenta en Licitaciones.
+                                        </p>
+                                    </div>
+                                    <div class="form-check form-switch mb-0">
+                                        <input class="form-check-input" type="checkbox" id="emailActivoSwitch" style="width: 2.8rem; height: 1.4rem; cursor: pointer;">
+                                        <label class="form-check-label small fw-bold ms-1" for="emailActivoSwitch">Activo</label>
+                                    </div>
+                                </div>
+                                <div class="card-body">
+                                    <form id="emailAccountForm">
+                                        <div class="row g-3">
+                                            <div class="col-12 col-md-6">
+                                                <label class="form-label small fw-bold">Nombre Identificador del Buzón</label>
+                                                <input type="text" class="form-control form-control-sm" id="emailNombreInput" placeholder="Ej. Buzón Licitaciones Cliente" value="Buzón de Licitaciones" required />
+                                            </div>
+                                            <div class="col-12 col-md-6">
+                                                <label class="form-label small fw-bold">Dirección de Correo Electrónico</label>
+                                                <input type="email" class="form-control form-control-sm" id="emailAddressInput" placeholder="licitaciones@tuempresa.com.mx" required />
+                                            </div>
+
+                                            <div class="col-12 col-md-6">
+                                                <label class="form-label small fw-bold">Servidor IMAP (Host)</label>
+                                                <input type="text" class="form-control form-control-sm" id="emailImapHostInput" placeholder="imap.gmail.com / outlook.office365.com" required />
+                                            </div>
+                                            <div class="col-6 col-md-3">
+                                                <label class="form-label small fw-bold">Puerto IMAP</label>
+                                                <input type="number" class="form-control form-control-sm" id="emailImapPortInput" value="993" required />
+                                            </div>
+                                            <div class="col-6 col-md-3 d-flex align-items-end">
+                                                <div class="form-check form-switch mb-2">
+                                                    <input class="form-check-input" type="checkbox" id="emailImapTlsSwitch" checked />
+                                                    <label class="form-check-label small" for="emailImapTlsSwitch">SSL / TLS (993)</label>
+                                                </div>
+                                            </div>
+
+                                            <div class="col-12 col-md-6">
+                                                <label class="form-label small fw-bold">Usuario de Acceso IMAP</label>
+                                                <input type="text" class="form-control form-control-sm" id="emailImapUserInput" placeholder="licitaciones@tuempresa.com.mx" required />
+                                            </div>
+                                            <div class="col-12 col-md-6">
+                                                <label class="form-label small fw-bold">
+                                                    Contraseña / Contraseña de Aplicación
+                                                    <span id="emailPwdSavedBadge" class="badge bg-success-subtle text-success ms-1 d-none">Guardada (AES-256)</span>
+                                                </label>
+                                                <input type="password" class="form-control form-control-sm" id="emailImapPasswordInput" placeholder="Escribe para guardar o actualizar contraseña" />
+                                            </div>
+
+                                            <div class="col-12 col-md-4">
+                                                <label class="form-label small fw-bold">Carpeta del Buzón</label>
+                                                <input type="text" class="form-control form-control-sm" id="emailMailboxInput" value="INBOX" />
+                                            </div>
+                                            <div class="col-12 col-md-4">
+                                                <label class="form-label small fw-bold">Frecuencia de Revisión</label>
+                                                <select class="form-select form-select-sm" id="emailFrecuenciaSelect">
+                                                    <option value="24" selected>Cada 24 horas (Diario)</option>
+                                                    <option value="12">Cada 12 horas</option>
+                                                    <option value="6">Cada 6 horas</option>
+                                                    <option value="4">Cada 4 horas</option>
+                                                    <option value="1">Cada 1 hora</option>
+                                                </select>
+                                            </div>
+                                            <div class="col-12 col-md-4 d-flex align-items-end">
+                                                <div class="form-check form-switch mb-2">
+                                                    <input class="form-check-input" type="checkbox" id="emailLightpandaSwitch" checked />
+                                                    <label class="form-check-label small" for="emailLightpandaSwitch" title="Si el correo contiene enlaces a portales, usar Lightpanda para abrirlos y extraer los documentos">
+                                                        Seguir enlaces con Lightpanda
+                                                    </label>
+                                                </div>
+                                            </div>
+
+                                            <div class="col-12">
+                                                <label class="form-label small fw-bold">Filtro de Palabras Clave en Correos (separadas por coma)</label>
+                                                <input type="text" class="form-control form-control-sm" id="emailKeywordsInput" value="licitacion, licitación, convocatoria, mantenimiento, desarrollo, adquisicion, adquisición, bases, concurso" />
+                                                <div class="form-text small">
+                                                    Se procesarán los correos nuevos que contengan cualquiera de estas palabras o que incluyan archivos PDF/Word adjuntos.
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div id="emailTestFeedback" class="alert d-none small mt-3 mb-0"></div>
+
+                                        <div class="d-flex flex-wrap gap-2 mt-4 pt-2 border-top">
+                                            <button type="submit" class="btn btn-sm btn-primary" id="btnSaveEmailAccount">
+                                                <i class="bi bi-save me-1"></i> Guardar Parámetros de Correo E
+                                            </button>
+                                            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnTestEmailImap">
+                                                <i class="bi bi-plug me-1"></i> Probar Conexión al Buzón
+                                            </button>
+                                            <button type="button" class="btn btn-sm btn-success ms-auto" id="btnSyncEmailNow">
+                                                <i class="bi bi-arrow-repeat me-1"></i> Revisar Correos Nuevos Ahora
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-12 col-xl-5 mb-4">
+                            <div class="card border-0 shadow-sm h-100">
+                                <div class="card-header bg-none border-0 pt-3 pb-0">
+                                    <h6 class="title mb-1"><i class="bi bi-activity text-primary me-2"></i>Estado del Monitoreo de Correo</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row g-3 mb-3">
+                                        <div class="col-6">
+                                            <div class="p-3 rounded bg-light border">
+                                                <div class="small text-secondary">Última Revisión</div>
+                                                <div class="fw-bold text-dark small mt-1" id="emailStatLastCheck">Sin revisar aún</div>
+                                            </div>
+                                        </div>
+                                        <div class="col-6">
+                                            <div class="p-3 rounded bg-light border">
+                                                <div class="small text-secondary">Próxima Revisión Automática</div>
+                                                <div class="fw-bold text-dark small mt-1" id="emailStatNextCheck">-</div>
+                                            </div>
+                                        </div>
+                                        <div class="col-6">
+                                            <div class="p-3 rounded bg-light border">
+                                                <div class="small text-secondary">Correos Revisados</div>
+                                                <div class="fw-bold fs-5 text-primary mt-1" id="emailStatProcessedCount">0</div>
+                                            </div>
+                                        </div>
+                                        <div class="col-6">
+                                            <div class="p-3 rounded bg-light border">
+                                                <div class="small text-secondary">Licitaciones Extraídas</div>
+                                                <div class="fw-bold fs-5 text-success mt-1" id="emailStatTendersCount">0</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="p-3 rounded bg-light border">
+                                        <div class="small text-secondary mb-1">Resultado de la Última Sincronización:</div>
+                                        <div class="small fw-medium text-dark" id="emailStatLastMessage">Configura y activa la cuenta para iniciar el monitoreo diario.</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-12">
+                            <div class="card border-0 shadow-sm">
+                                <div class="card-header bg-none border-0 pt-3 pb-0 d-flex justify-content-between align-items-center">
+                                    <h6 class="title mb-1"><i class="bi bi-inbox text-primary me-2"></i>Bitácora de Correos Recibidos y Procesados</h6>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btnRefreshEmailLogs">
+                                        <i class="bi bi-arrow-clockwise me-1"></i> Actualizar
+                                    </button>
+                                </div>
+                                <div class="card-body">
+                                    <div class="table-responsive">
+                                        <table class="table table-sm table-hover align-middle small mb-0">
+                                            <thead class="table-light">
+                                                <tr>
+                                                    <th>Fecha Recepción</th>
+                                                    <th>Remitente</th>
+                                                    <th>Asunto del Correo</th>
+                                                    <th class="text-center">Adjuntos</th>
+                                                    <th>Estado</th>
+                                                    <th>Licitación Generada / Detalle</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="emailMessagesLogTableBody">
+                                                <tr>
+                                                    <td colspan="6" class="text-center text-secondary py-3">Sin correos procesados aún.</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </div>
     </main>
@@ -789,6 +976,7 @@
     <script src="assets/js/main.js"></script>
     <script src="assets/js/color-scheme.js"></script>
     <script src="assets/vendor/chart-js-3.3.1/chart.min.js"></script>
+    <script src="js/session.app.js"></script>
 
     <!-- Aplicación cliente del Módulo de Configuración de Claude -->
     <script src="js/llm-settings.app.js"></script>

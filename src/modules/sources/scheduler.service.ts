@@ -131,6 +131,8 @@ export class SourcesSchedulerService {
         sourceId: source.id,
         defaultEntidad: source.entidad || source.nombre,
         skipIfDuplicate: disparo === 'programado', // En programado omite duplicados; en manual o primera vez guarda si es nueva
+        tenantId: Number(source.tenant_id || 1),
+        origenTipo: 'source',
       });
 
       const timeoutPromise = new Promise<never>((_, reject) =>

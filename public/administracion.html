@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="es">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <title>Scrapper — Administración Multitenant (Clientes, Usuarios y Actividad)</title>
+
+    <link rel="apple-touch-icon" href="assets/img/favicon180.png" sizes="180x180">
+    <link rel="icon" href="assets/img/favicon32.png" sizes="32x32" type="image/png">
+    <link rel="icon" href="assets/img/favicon16.png" sizes="16x16" type="image/png">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <link href="assets/scss/style.css" rel="stylesheet">
+
+    <style>
+        #adminTabs .nav-link {
+            cursor: pointer;
+        }
+        .section-badge-title {
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 700;
+            color: #0d6efd;
+        }
+    </style>
+</head>
+
+<body class="d-flex flex-column h-100 sidebar-pushcontent" data-sidebarstyle="sidebar-pushcontent">
+
+    <!-- Page loader WinDOORS -->
+    <div class="container-fluid h-100 position-fixed loader-wrap bg-blur">
+        <div class="row justify-content-center h-100">
+            <div class="col-auto align-self-center text-center">
+                <div class="doors animated mb-4">
+                    <div class="left-door"></div>
+                    <div class="right-door"></div>
+                </div>
+                <h5 class="mb-0">Cargando</h5>
+                <div class="spinner-border text-primary mt-3" role="status">
+                    <span class="visually-hidden">Cargando...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Background WinDOORS -->
+    <div class="coverimg h-100 w-100 top-0 start-0 main-bg">
+        <div class="bg-blur main-bg-overlay"></div>
+        <img src="assets/img/bg-14.jpg" alt="" />
+    </div>
+
+    <!-- Header -->
+    <header class="header">
+        <nav class="navbar fixed-top">
+            <div class="container-fluid">
+                <div class="sidebar-width">
+                    <button class="btn btn-link btn-square menu-btn" type="button">
+                        <i class="bi bi-list fs-4"></i>
+                    </button>
+                    <a class="navbar-brand ms-2" href="licitaciones.html">
+                        <div class="row">
+                            <div class="col-auto"><img src="assets/img/favicon48.png" class="mx-100" alt="" /></div>
+                            <div class="col ps-0 align-self-center d-none d-sm-block">
+                                <h5 class="fw-normal text-dark mb-0">Scrapper</h5>
+                                <p class="small text-secondary">Gestión de Licitaciones</p>
+                            </div>
+                        </div>
+                    </a>
+                </div>
+
+                <div class="col-auto ms-auto">
+                    <div class="d-flex align-items-center">
+                        <figure class="avatar avatar-40 rounded-circle coverimg vm me-2 mb-0">
+                            <img src="assets/img/user-1.jpg" alt="" />
+                        </figure>
+                        <div class="d-none d-lg-block">
+                            <p class="mb-0 lh-1">
+                                <span class="text-dark fw-medium">Administrador</span><br>
+                                <small class="text-secondary small">Panel de Control</small>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <!-- Sidebar WinDOORS -->
+    <div class="sidebar-wrap">
+        <div class="sidebar">
+            <div class="container">
+                <div class="row mb-3">
+                    <div class="col align-self-center">
+                        <h6>Menú Principal</h6>
+                    </div>
+                </div>
+
+                <div class="row mb-4">
+                    <div class="col-12 px-0">
+                        <ul class="nav nav-pills">
+                            <li class="nav-item">
+                                <a class="nav-link" href="licitaciones.html">
+                                    <div class="avatar avatar-40 icon"><i class="bi bi-file-earmark-richtext"></i></div>
+                                    <div class="col">Licitaciones &amp; Pipeline</div>
+                                    <div class="arrow"><i class="bi bi-chevron-right"></i></div>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="fuentes.html">
+                                    <div class="avatar avatar-40 icon"><i class="bi bi-globe2"></i></div>
+                                    <div class="col">Fuentes de Interés</div>
+                                    <div class="arrow"><i class="bi bi-chevron-right"></i></div>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="settings-llm.html">
+                                    <div class="avatar avatar-40 icon"><i class="bi bi-gear"></i></div>
+                                    <div class="col">Configuración</div>
+                                    <div class="arrow"><i class="bi bi-chevron-right"></i></div>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link active" href="administracion.html">
+                                    <div class="avatar avatar-40 icon"><i class="bi bi-people"></i></div>
+                                    <div class="col">Administración</div>
+                                    <div class="arrow"><i class="bi bi-chevron-right"></i></div>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <main class="main mainheight">
+        <div class="container-fluid mb-3">
+            <div class="row align-items-center page-title">
+                <div class="col-12 col-md">
+                    <h5 class="mb-0">Administración de Clientes, Usuarios y Actividad</h5>
+                    <p class="small text-secondary mb-0">
+                        Gestión multitenant de organizaciones clientes, alta de usuarios anclados a correo electrónico y auditoría de actividad.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="container-fluid">
+            <div id="adminFeedbackAlert" class="alert d-none border-0 shadow-sm mb-3" role="alert"></div>
+
+            <!-- Pestañas de Administración -->
+            <ul class="nav nav-tabs nav-WinDOORS nav-lg mb-4" id="adminTabs" role="tablist">
+                <li class="nav-item" role="presentation" id="tabNavClientes">
+                    <a class="nav-link active" href="#clientes" data-target="#pane-clientes" role="tab">
+                        <i class="bi bi-building me-1"></i> Clientes (Tenants)
+                    </a>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <a class="nav-link" href="#usuarios" data-target="#pane-usuarios" role="tab">
+                        <i class="bi bi-people me-1"></i> Usuarios y Perfiles
+                    </a>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <a class="nav-link" href="#actividad" data-target="#pane-actividad" role="tab">
+                        <i class="bi bi-activity me-1"></i> Actividad de Usuarios
+                    </a>
+                </li>
+            </ul>
+
+            <div class="tab-content" id="adminTabsContent">
+
+                <!-- ===================================================================== -->
+                <!-- PESTAÑA 1: CLIENTES (ALTA CON DATOS FISCALES, DIRECCIÓN Y CONTACTOS)  -->
+                <!-- ===================================================================== -->
+                <div class="tab-pane fade show active" id="pane-clientes" role="tabpanel">
+                    <!-- Formulario Colapsable de Alta / Edición de Cliente -->
+                    <div id="tenantFormCard" class="card border-0 shadow-sm mb-4 d-none">
+                        <div class="card-header bg-none border-0 pt-3 pb-0 d-flex justify-content-between align-items-center">
+                            <h6 class="title mb-0" id="tenantFormTitle">
+                                <i class="bi bi-building-add text-primary me-2"></i>Alta de Nuevo Cliente
+                            </h6>
+                            <button type="button" class="btn-close" id="btnCloseTenantForm"></button>
+                        </div>
+                        <div class="card-body">
+                            <form id="tenantForm">
+                                <input type="hidden" id="tenantIdInput" value="" />
+
+                                <!-- Bloque 1: Datos Fiscales y Comerciales -->
+                                <div class="mb-3 pb-2 border-bottom">
+                                    <div class="section-badge-title mb-2">
+                                        <i class="bi bi-receipt me-1"></i>1. Datos Fiscales y Comerciales
+                                    </div>
+                                    <div class="row g-3">
+                                        <div class="col-12 col-md-4">
+                                            <label class="form-label small fw-bold">Nombre Comercial *</label>
+                                            <input type="text" class="form-control form-control-sm" id="tNombreComercial" placeholder="Ej. Grupo Constructor del Centro" required />
+                                        </div>
+                                        <div class="col-12 col-md-5">
+                                            <label class="form-label small fw-bold">Razón Social *</label>
+                                            <input type="text" class="form-control form-control-sm" id="tRazonSocial" placeholder="Ej. Grupo Constructor del Centro S.A. de C.V." required />
+                                        </div>
+                                        <div class="col-12 col-md-3">
+                                            <label class="form-label small fw-bold">RFC *</label>
+                                            <input type="text" class="form-control form-control-sm text-uppercase" id="tRfc" placeholder="GCC010101AAA" maxlength="15" required />
+                                        </div>
+                                        <div class="col-12 col-md-4">
+                                            <label class="form-label small fw-bold">Régimen Fiscal</label>
+                                            <input type="text" class="form-control form-control-sm" id="tRegimenFiscal" placeholder="601 - General de Ley Personas Morales" />
+                                        </div>
+                                        <div class="col-12 col-md-4">
+                                            <label class="form-label small fw-bold">Uso de CFDI</label>
+                                            <input type="text" class="form-control form-control-sm" id="tUsoCfdi" placeholder="G03 - Gastos en general" />
+                                        </div>
+                                        <div class="col-12 col-md-4">
+                                            <label class="form-label small fw-bold">Correo de Facturación</label>
+                                            <input type="email" class="form-control form-control-sm" id="tEmailFacturacion" placeholder="facturacion@cliente.com.mx" />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Bloque 2: Dirección Fiscal / Comercial -->
+                                <div class="mb-3 pb-2 border-bottom">
+                                    <div class="section-badge-title mb-2">
+                                        <i class="bi bi-geo-alt me-1"></i>2. Dirección Fiscal / Comercial
+                                    </div>
+                                    <div class="row g-3">
+                                        <div class="col-12 col-md-5">
+                                            <label class="form-label small fw-bold">Calle / Avenida</label>
+                                            <input type="text" class="form-control form-control-sm" id="tCalle" placeholder="Av. Paseo de la Reforma" />
+                                        </div>
+                                        <div class="col-6 col-md-2">
+                                            <label class="form-label small fw-bold">Núm. Exterior</label>
+                                            <input type="text" class="form-control form-control-sm" id="tNumExterior" placeholder="250" />
+                                        </div>
+                                        <div class="col-6 col-md-2">
+                                            <label class="form-label small fw-bold">Núm. Interior</label>
+                                            <input type="text" class="form-control form-control-sm" id="tNumInterior" placeholder="Piso 4" />
+                                        </div>
+                                        <div class="col-12 col-md-3">
+                                            <label class="form-label small fw-bold">Código Postal</label>
+                                            <input type="text" class="form-control form-control-sm" id="tCodigoPostal" placeholder="06600" />
+                                        </div>
+                                        <div class="col-12 col-md-3">
+                                            <label class="form-label small fw-bold">Colonia</label>
+                                            <input type="text" class="form-control form-control-sm" id="tColonia" placeholder="Juárez" />
+                                        </div>
+                                        <div class="col-12 col-md-3">
+                                            <label class="form-label small fw-bold">Municipio / Alcaldía</label>
+                                            <input type="text" class="form-control form-control-sm" id="tMunicipio" placeholder="Cuauhtémoc" />
+                                        </div>
+                                        <div class="col-12 col-md-3">
+                                            <label class="form-label small fw-bold">Ciudad</label>
+                                            <input type="text" class="form-control form-control-sm" id="tCiudad" placeholder="Ciudad de México" />
+                                        </div>
+                                        <div class="col-12 col-md-3">
+                                            <label class="form-label small fw-bold">Estado</label>
+                                            <input type="text" class="form-control form-control-sm" id="tEstado" placeholder="CDMX" />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Bloque 3 y 4: Contacto Administrativo y Contacto Técnico -->
+                                <div class="row g-3 mb-3">
+                                    <div class="col-12 col-lg-6">
+                                        <div class="p-3 rounded bg-light border h-100">
+                                            <div class="section-badge-title mb-2">
+                                                <i class="bi bi-person-badge me-1"></i>3. Contacto Administrativo
+                                            </div>
+                                            <div class="row g-2">
+                                                <div class="col-12 col-md-6">
+                                                    <label class="form-label small fw-bold">Nombre Completo</label>
+                                                    <input type="text" class="form-control form-control-sm" id="tAdminNombre" placeholder="Lic. María González" />
+                                                </div>
+                                                <div class="col-12 col-md-6">
+                                                    <label class="form-label small fw-bold">Cargo / Puesto</label>
+                                                    <input type="text" class="form-control form-control-sm" id="tAdminCargo" placeholder="Directora de Administración" />
+                                                </div>
+                                                <div class="col-12 col-md-6">
+                                                    <label class="form-label small fw-bold">Correo Electrónico</label>
+                                                    <input type="email" class="form-control form-control-sm" id="tAdminEmail" placeholder="mgonzalez@cliente.com.mx" />
+                                                </div>
+                                                <div class="col-12 col-md-6">
+                                                    <label class="form-label small fw-bold">Teléfono / Celular</label>
+                                                    <input type="text" class="form-control form-control-sm" id="tAdminTelefono" placeholder="55 1234 5678" />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="col-12 col-lg-6">
+                                        <div class="p-3 rounded bg-light border h-100">
+                                            <div class="section-badge-title mb-2">
+                                                <i class="bi bi-cpu me-1"></i>4. Contacto Técnico
+                                            </div>
+                                            <div class="row g-2">
+                                                <div class="col-12 col-md-6">
+                                                    <label class="form-label small fw-bold">Nombre Completo</label>
+                                                    <input type="text" class="form-control form-control-sm" id="tTecnicoNombre" placeholder="Ing. Carlos Ramírez" />
+                                                </div>
+                                                <div class="col-12 col-md-6">
+                                                    <label class="form-label small fw-bold">Cargo / Puesto</label>
+                                                    <input type="text" class="form-control form-control-sm" id="tTecnicoCargo" placeholder="Coordinador de TI / Licitaciones" />
+                                                </div>
+                                                <div class="col-12 col-md-6">
+                                                    <label class="form-label small fw-bold">Correo Electrónico</label>
+                                                    <input type="email" class="form-control form-control-sm" id="tTecnicoEmail" placeholder="cramirez@cliente.com.mx" />
+                                                </div>
+                                                <div class="col-12 col-md-6">
+                                                    <label class="form-label small fw-bold">Teléfono / Celular</label>
+                                                    <input type="text" class="form-control form-control-sm" id="tTecnicoTelefono" placeholder="55 8765 4321" />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="row g-3 align-items-center">
+                                    <div class="col-12 col-md-8">
+                                        <label class="form-label small fw-bold">Notas u Observaciones</label>
+                                        <input type="text" class="form-control form-control-sm" id="tNotas" placeholder="Observaciones adicionales del contrato o cuenta..." />
+                                    </div>
+                                    <div class="col-12 col-md-4 d-flex align-items-center justify-content-end pt-3">
+                                        <div class="form-check form-switch me-4">
+                                            <input class="form-check-input" type="checkbox" id="tActivoSwitch" checked />
+                                            <label class="form-check-label small fw-bold" for="tActivoSwitch">Cliente Activo</label>
+                                        </div>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary me-2" id="btnCancelTenantForm">Cancelar</button>
+                                        <button type="submit" class="btn btn-sm btn-primary" id="btnSaveTenant">
+                                            <i class="bi bi-check2-circle me-1"></i> Guardar Cliente
+                                        </button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Tabla de Clientes -->
+                    <div class="card border-0 shadow-sm">
+                        <div class="card-header bg-none border-0 pt-3 pb-0 d-flex flex-wrap justify-content-between align-items-center gap-2">
+                            <div>
+                                <h6 class="title mb-1"><i class="bi bi-buildings text-primary me-2"></i>Padrón de Clientes Registrados</h6>
+                                <p class="small text-secondary mb-0">Administra los datos fiscales, contactos y acceso de cada organización cliente.</p>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnRefreshTenants">
+                                    <i class="bi bi-arrow-clockwise me-1"></i> Actualizar
+                                </button>
+                                <button type="button" class="btn btn-sm btn-primary" id="btnNewTenant">
+                                    <i class="bi bi-plus-lg me-1"></i> Alta de Nuevo Cliente
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-hover align-middle small mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>ID</th>
+                                            <th>Cliente / Datos Fiscales</th>
+                                            <th>Dirección</th>
+                                            <th>Contacto Administrativo</th>
+                                            <th>Contacto Técnico</th>
+                                            <th class="text-center">Usuarios</th>
+                                            <th class="text-center">Licitaciones</th>
+                                            <th>Estado</th>
+                                            <th class="text-end">Acciones</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tenantsTableBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===================================================================== -->
+                <!-- PESTAÑA 2: USUARIOS Y PERFILES (ANCLADOS A CORREO ELECTRÓNICO)        -->
+                <!-- ===================================================================== -->
+                <div class="tab-pane fade" id="pane-usuarios" role="tabpanel">
+                    <!-- Formulario de Alta / Edición de Usuario -->
+                    <div id="userFormCard" class="card border-0 shadow-sm mb-4 d-none">
+                        <div class="card-header bg-none border-0 pt-3 pb-0 d-flex justify-content-between align-items-center">
+                            <h6 class="title mb-0" id="userFormTitle">
+                                <i class="bi bi-person-plus text-primary me-2"></i>Alta de Usuario
+                            </h6>
+                            <button type="button" class="btn-close" id="btnCloseUserForm"></button>
+                        </div>
+                        <div class="card-body">
+                            <form id="userForm">
+                                <input type="hidden" id="userIdInput" value="" />
+                                <div class="row g-3">
+                                    <div class="col-12 col-md-4" id="userTenantSelectWrapper">
+                                        <label class="form-label small fw-bold">Cliente Asignado *</label>
+                                        <select class="form-select form-select-sm" id="uTenantIdSelect" required></select>
+                                    </div>
+                                    <div class="col-12 col-md-4">
+                                        <label class="form-label small fw-bold">Correo Electrónico (Usuario de Login) *</label>
+                                        <input type="email" class="form-control form-control-sm" id="uEmailInput" placeholder="usuario@empresa.com.mx" required />
+                                    </div>
+                                    <div class="col-12 col-md-4">
+                                        <label class="form-label small fw-bold">Nombre Completo *</label>
+                                        <input type="text" class="form-control form-control-sm" id="uNombreInput" placeholder="Nombre y Apellidos" required />
+                                    </div>
+                                    <div class="col-12 col-md-3">
+                                        <label class="form-label small fw-bold">Perfil de Acceso *</label>
+                                        <select class="form-select form-select-sm" id="uRoleSelect" required>
+                                            <option value="analista">Analista</option>
+                                            <option value="admin">Administrador de Cliente</option>
+                                            <option value="superadmin" id="optRoleSuperAdmin">Super Administrador</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-12 col-md-3">
+                                        <label class="form-label small fw-bold" id="uPasswordLabel">Contraseña *</label>
+                                        <input type="password" class="form-control form-control-sm" id="uPasswordInput" placeholder="Mínimo 6 caracteres" />
+                                    </div>
+                                    <div class="col-12 col-md-3">
+                                        <label class="form-label small fw-bold">Cargo / Área</label>
+                                        <input type="text" class="form-control form-control-sm" id="uCargoInput" placeholder="Analista de Licitaciones" />
+                                    </div>
+                                    <div class="col-12 col-md-3">
+                                        <label class="form-label small fw-bold">Teléfono</label>
+                                        <input type="text" class="form-control form-control-sm" id="uTelefonoInput" placeholder="55 0000 0000" />
+                                    </div>
+                                </div>
+                                <div class="d-flex justify-content-end align-items-center mt-3 pt-2 border-top">
+                                    <div class="form-check form-switch me-4">
+                                        <input class="form-check-input" type="checkbox" id="uActivoSwitch" checked />
+                                        <label class="form-check-label small fw-bold" for="uActivoSwitch">Usuario Activo</label>
+                                    </div>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary me-2" id="btnCancelUserForm">Cancelar</button>
+                                    <button type="submit" class="btn btn-sm btn-primary">
+                                        <i class="bi bi-check2-circle me-1"></i> Guardar Usuario
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Tabla de Usuarios -->
+                    <div class="card border-0 shadow-sm">
+                        <div class="card-header bg-none border-0 pt-3 pb-0 d-flex flex-wrap justify-content-between align-items-center gap-2">
+                            <div>
+                                <h6 class="title mb-1"><i class="bi bi-person-lines-fill text-primary me-2"></i>Directorio de Usuarios y Perfiles</h6>
+                                <p class="small text-secondary mb-0">Cada usuario inicia sesión con su correo electrónico y opera dentro de su cliente asignado.</p>
+                            </div>
+                            <div class="d-flex flex-wrap align-items-center gap-2">
+                                <select id="filterUsersByTenant" class="form-select form-select-sm" style="width: 220px;">
+                                    <option value="">Todos los clientes</option>
+                                </select>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnRefreshUsers">
+                                    <i class="bi bi-arrow-clockwise me-1"></i> Actualizar
+                                </button>
+                                <button type="button" class="btn btn-sm btn-primary" id="btnNewUser">
+                                    <i class="bi bi-person-plus me-1"></i> Nuevo Usuario
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-hover align-middle small mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>ID</th>
+                                            <th>Usuario</th>
+                                            <th>Correo Electrónico (Login)</th>
+                                            <th>Cliente</th>
+                                            <th>Perfil</th>
+                                            <th>Último Acceso</th>
+                                            <th>Estado</th>
+                                            <th class="text-end">Acciones</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="usersTableBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===================================================================== -->
+                <!-- PESTAÑA 3: BITÁCORA DE ACTIVIDAD POR CLIENTE Y USUARIO                -->
+                <!-- ===================================================================== -->
+                <div class="tab-pane fade" id="pane-actividad" role="tabpanel">
+                    <div class="card border-0 shadow-sm">
+                        <div class="card-header bg-none border-0 pt-3 pb-0 d-flex flex-wrap justify-content-between align-items-center gap-2">
+                            <div>
+                                <h6 class="title mb-1"><i class="bi bi-clock-history text-primary me-2"></i>Bitácora de Actividad</h6>
+                                <p class="small text-secondary mb-0">Registro auditable de accesos, extracciones, análisis y cambios por cliente y usuario.</p>
+                            </div>
+                            <div class="d-flex flex-wrap align-items-center gap-2">
+                                <select id="filterActivityByTenant" class="form-select form-select-sm" style="width: 210px;">
+                                    <option value="">Todos los clientes</option>
+                                </select>
+                                <select id="filterActivityByUser" class="form-select form-select-sm" style="width: 220px;">
+                                    <option value="">Todos los usuarios</option>
+                                </select>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnRefreshActivity">
+                                    <i class="bi bi-arrow-clockwise me-1"></i> Actualizar
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover align-middle small mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Fecha y Hora</th>
+                                            <th>Cliente</th>
+                                            <th>Usuario</th>
+                                            <th>Perfil</th>
+                                            <th>Módulo</th>
+                                            <th>Acción</th>
+                                            <th>Detalle</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="activityTableBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer mt-auto">
+        <div class="container-fluid">
+            <div class="row">
+                <div class="col-12 py-2">
+                    <span class="text-secondary small">Scrapper — Plataforma de Licitaciones</span>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="assets/js/jquery-3.3.1.min.js"></script>
+    <script src="assets/js/popper.min.js"></script>
+    <script src="assets/vendor/bootstrap-5/dist/js/bootstrap.bundle.js"></script>
+    <script src="assets/js/main.js"></script>
+    <script src="assets/js/color-scheme.js"></script>
+    <script src="js/session.app.js"></script>
+    <script src="js/administracion.app.js"></script>
+</body>
+
+</html>

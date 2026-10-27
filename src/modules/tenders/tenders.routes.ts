@@ -5,6 +5,7 @@ import { db } from '../../db/pool.js';
 import { tenderIngestionService } from './tender-ingestion.service.js';
 import { claudeService } from '../llm/claude.service.js';
 import { TaskNameSchema } from '../llm/llm.schemas.js';
+import { authService } from '../auth/auth.service.js';
 
 export const tendersRouter = Router();
 
@@ -23,8 +24,9 @@ const IngestUrlSchema = z.object({
  * GET /api/tenders
  * Lista el historial de licitaciones procesadas (incluyendo si son nuevas y la fuente de origen).
  */
-tendersRouter.get('/', async (_req: Request, res: Response) => {
+tendersRouter.get('/', async (req: Request, res: Response) => {
   try {
+    const tenantId = req.auth?.activeTenantId || 1;
     const result = await db.query(
       `SELECT
          t.id, t.source_url, t.titulo, t.entidad, t.numero_expediente,
@@ -32,14 +34,17 @@ tendersRouter.get('/', async (_req: Request, res: Response) => {
          t.estado, t.metodo_navegacion, t.modelo_utilizado,
          t.tokens_utilizados, t.costo_estimado, t.latencia_total_ms,
          t.keywords_buscadas, t.hits_encontrados,
-         t.source_id, t.es_nueva,
-         s.nombre AS source_nombre,
+         t.source_id, t.es_nueva, t.origen_tipo, t.email_account_id,
+         COALESCE(s.nombre, CASE WHEN t.origen_tipo = 'email' THEN '📧 ' || COALESCE(ea.nombre, 'Correo E') ELSE NULL END) AS source_nombre,
          t.created_at,
          (SELECT COUNT(*)::int FROM tender_documents d WHERE d.tender_id = t.id) AS total_documentos
        FROM tenders t
        LEFT JOIN scraping_sources s ON s.id = t.source_id
+       LEFT JOIN email_accounts ea ON ea.id = t.email_account_id
+       WHERE COALESCE(t.tenant_id, 1) = $1
        ORDER BY t.created_at DESC
-       LIMIT 100`
+       LIMIT 100`,
+      [tenantId]
     );
 
     const newCount = result.rows.filter((r) => Boolean(r.es_nueva)).length;
@@ -168,6 +173,7 @@ tendersRouter.post('/ingest-url', async (req: Request, res: Response) => {
 
   try {
     const d = parsed.data;
+    const tenantId = req.auth?.activeTenantId || 1;
     const result = await tenderIngestionService.ingestFromUrl({
       url: d.url,
       keywords: d.keywords,
@@ -178,7 +184,22 @@ tendersRouter.post('/ingest-url', async (req: Request, res: Response) => {
       authPassword: d.auth_password,
       authLoginUrl: d.auth_login_url,
       skipIfDuplicate: false,
+      tenantId,
+      origenTipo: 'url',
     });
+
+    if (req.auth) {
+      await authService.logActivity({
+        tenantId,
+        userId: req.auth.userId,
+        userEmail: req.auth.email,
+        userNombre: req.auth.nombreCompleto,
+        userRole: req.auth.role,
+        accion: 'Extracción manual de licitación por URL',
+        modulo: 'Licitaciones & Pipeline',
+        detalle: `URL: ${d.url} (Keywords: "${d.keywords || 'ninguna'}")`,
+      });
+    }
 
     res.json(result);
   } catch (err: any) {
@@ -246,6 +267,17 @@ tendersRouter.post('/:id/analyze', async (req: Request, res: Response) => {
       message: err?.message || 'Error al analizar licitación con Claude.',
     });
   }
+});
+
+/**
+ * POST /api/tenders/:id/mark-seen
+ */
+tendersRouter.post('/:id/mark-seen', async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!Number.isNaN(id)) {
+    await db.query('UPDATE tenders SET es_nueva = false WHERE id = $1', [id]);
+  }
+  res.json({ ok: true });
 });
 
 /**

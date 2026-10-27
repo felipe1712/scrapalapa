@@ -26,6 +26,7 @@
     '#perfiles': '#tab-profiles',
     '#consumo': '#tab-usage',
     '#historial': '#tab-history',
+    '#correo-e': '#tab-email',
   };
 
   function getAuthHeaders() {
@@ -870,8 +871,219 @@
     }
   }
 
+  // =========================================================================
+  // PESTAÑA 5: MONITOREO DE CORREO ELECTRÓNICO ("CORREO E")
+  // =========================================================================
+  function collectEmailFormPayload() {
+    return {
+      nombre: document.getElementById('emailNombreInput')?.value?.trim() || 'Buzón de Licitaciones',
+      email_address: document.getElementById('emailAddressInput')?.value?.trim() || '',
+      imap_host: document.getElementById('emailImapHostInput')?.value?.trim() || '',
+      imap_port: Number(document.getElementById('emailImapPortInput')?.value || 993),
+      imap_tls: Boolean(document.getElementById('emailImapTlsSwitch')?.checked),
+      imap_user: document.getElementById('emailImapUserInput')?.value?.trim() || '',
+      imap_password: document.getElementById('emailImapPasswordInput')?.value || '',
+      mailbox: document.getElementById('emailMailboxInput')?.value?.trim() || 'INBOX',
+      filtro_keywords: document.getElementById('emailKeywordsInput')?.value?.trim() || '',
+      usar_lightpanda_links: Boolean(document.getElementById('emailLightpandaSwitch')?.checked),
+      frecuencia_horas: Number(document.getElementById('emailFrecuenciaSelect')?.value || 24),
+      activo: Boolean(document.getElementById('emailActivoSwitch')?.checked),
+    };
+  }
+
+  function showEmailFeedback(msg, type = 'info') {
+    const el = document.getElementById('emailTestFeedback');
+    if (!el) return;
+    el.className = `alert alert-${type} small mt-3 mb-0`;
+    el.textContent = msg;
+    el.classList.remove('d-none');
+  }
+
+  async function loadEmailAccountSettings() {
+    try {
+      const res = await fetch('/api/email-accounts');
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data.ok) return;
+
+      const acc = data.account;
+      if (acc) {
+        const setVal = (id, val) => {
+          const el = document.getElementById(id);
+          if (el) el.value = val ?? '';
+        };
+        setVal('emailNombreInput', acc.nombre);
+        setVal('emailAddressInput', acc.email_address);
+        setVal('emailImapHostInput', acc.imap_host);
+        setVal('emailImapPortInput', acc.imap_port || 993);
+        setVal('emailImapUserInput', acc.imap_user);
+        setVal('emailMailboxInput', acc.mailbox || 'INBOX');
+        setVal('emailKeywordsInput', acc.filtro_keywords || '');
+        setVal('emailFrecuenciaSelect', String(acc.frecuencia_horas || 24));
+
+        const tlsEl = document.getElementById('emailImapTlsSwitch');
+        if (tlsEl) tlsEl.checked = Boolean(acc.imap_tls);
+        const lpEl = document.getElementById('emailLightpandaSwitch');
+        if (lpEl) lpEl.checked = acc.usar_lightpanda_links !== false;
+        const actEl = document.getElementById('emailActivoSwitch');
+        if (actEl) actEl.checked = Boolean(acc.activo);
+
+        const pwdBadge = document.getElementById('emailPwdSavedBadge');
+        if (pwdBadge) {
+          pwdBadge.classList.toggle('d-none', !acc.has_password);
+        }
+
+        const lastCheckEl = document.getElementById('emailStatLastCheck');
+        if (lastCheckEl) {
+          lastCheckEl.textContent = acc.ultima_revision_at
+            ? new Date(acc.ultima_revision_at).toLocaleString()
+            : 'Sin revisar aún';
+        }
+        const nextCheckEl = document.getElementById('emailStatNextCheck');
+        if (nextCheckEl) {
+          nextCheckEl.textContent =
+            acc.activo && acc.proxima_revision_at
+              ? new Date(acc.proxima_revision_at).toLocaleString()
+              : acc.activo
+                ? 'En el siguiente ciclo'
+                : 'Pausado';
+        }
+        const procEl = document.getElementById('emailStatProcessedCount');
+        if (procEl) procEl.textContent = String(acc.total_correos_procesados || 0);
+        const tendEl = document.getElementById('emailStatTendersCount');
+        if (tendEl) tendEl.textContent = String(acc.total_licitaciones_encontradas || 0);
+        const msgEl = document.getElementById('emailStatLastMessage');
+        if (msgEl) msgEl.textContent = acc.ultimo_mensaje || 'Cuenta configurada.';
+      }
+
+      const tbody = document.getElementById('emailMessagesLogTableBody');
+      if (tbody) {
+        const logs = data.logs || [];
+        if (logs.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="6" class="text-center text-secondary py-3">Sin correos procesados aún.</td></tr>`;
+        } else {
+          tbody.innerHTML = logs
+            .map((m) => {
+              const statusBadge =
+                m.status === 'processed'
+                  ? '<span class="badge bg-success">Licitación Extraída</span>'
+                  : m.status === 'duplicate'
+                    ? '<span class="badge bg-secondary">Duplicada</span>'
+                    : m.status === 'skipped'
+                      ? '<span class="badge bg-light text-dark border">Omitido</span>'
+                      : '<span class="badge bg-danger">Error</span>';
+              const tenderLink = m.tender_id
+                ? `<a href="licitaciones.html" class="fw-bold text-primary text-decoration-none"><i class="bi bi-file-earmark-richtext me-1"></i>Ver Licitación #${m.tender_id}</a><div class="small text-secondary">${m.detalle || ''}</div>`
+                : `<span class="text-secondary">${m.detalle || '-'}</span>`;
+              return `<tr>
+                <td class="text-nowrap">${m.received_at ? new Date(m.received_at).toLocaleString() : new Date(m.created_at).toLocaleString()}</td>
+                <td class="text-truncate" style="max-width: 180px;">${m.from_address}</td>
+                <td class="fw-medium text-dark text-truncate" style="max-width: 240px;">${m.subject}</td>
+                <td class="text-center"><span class="badge bg-light text-dark border">${m.attachments_count || 0}</span></td>
+                <td>${statusBadge}</td>
+                <td>${tenderLink}</td>
+              </tr>`;
+            })
+            .join('');
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  function bindEmailEvents() {
+    const emailForm = document.getElementById('emailAccountForm');
+    emailForm?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const payload = collectEmailFormPayload();
+      const btn = document.getElementById('btnSaveEmailAccount');
+      if (btn) btn.disabled = true;
+      try {
+        const res = await fetch('/api/email-accounts/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          showEmailFeedback(data.message || 'Error al guardar la configuración de correo.', 'danger');
+          return;
+        }
+        const pwdInput = document.getElementById('emailImapPasswordInput');
+        if (pwdInput) pwdInput.value = '';
+        showEmailFeedback(data.message, 'success');
+        await loadEmailAccountSettings();
+      } catch (err) {
+        showEmailFeedback('Error al guardar: ' + err.message, 'danger');
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    });
+
+    document.getElementById('btnTestEmailImap')?.addEventListener('click', async () => {
+      const payload = collectEmailFormPayload();
+      const btn = document.getElementById('btnTestEmailImap');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Probando...';
+      }
+      showEmailFeedback('Conectando al servidor IMAP...', 'info');
+      try {
+        const res = await fetch('/api/email-accounts/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          showEmailFeedback(data.message || 'Falló la conexión IMAP.', 'danger');
+          return;
+        }
+        showEmailFeedback(data.message, 'success');
+      } catch (err) {
+        showEmailFeedback('Error de red al probar IMAP: ' + err.message, 'danger');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="bi bi-plug me-1"></i> Probar Conexión al Buzón';
+        }
+      }
+    });
+
+    document.getElementById('btnSyncEmailNow')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btnSyncEmailNow');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Sincronizando correos...';
+      }
+      showEmailFeedback('Leyendo correos nuevos desde la última revisión y procesando licitaciones...', 'info');
+      try {
+        const res = await fetch('/api/email-accounts/sync-now', { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          showEmailFeedback(data.message || 'No se pudo sincronizar el buzón.', 'danger');
+          return;
+        }
+        showEmailFeedback(data.message, 'success');
+        await loadEmailAccountSettings();
+      } catch (err) {
+        showEmailFeedback('Error al sincronizar correos: ' + err.message, 'danger');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i> Revisar Correos Nuevos Ahora';
+        }
+      }
+    });
+
+    document.getElementById('btnRefreshEmailLogs')?.addEventListener('click', loadEmailAccountSettings);
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
     bindEvents();
+    bindEmailEvents();
     loadAllSettings();
+    loadEmailAccountSettings();
   });
 })();

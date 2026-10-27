@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="es">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <title>Scrapper — Iniciar Sesión</title>
+
+    <link rel="apple-touch-icon" href="assets/img/favicon180.png" sizes="180x180">
+    <link rel="icon" href="assets/img/favicon32.png" sizes="32x32" type="image/png">
+    <link rel="icon" href="assets/img/favicon16.png" sizes="16x16" type="image/png">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <link href="assets/scss/style.css" rel="stylesheet">
+</head>
+
+<body class="d-flex flex-column h-100 sidebar-pushcontent" data-sidebarstyle="sidebar-pushcontent">
+
+    <!-- Page loader WinDOORS -->
+    <div class="container-fluid h-100 position-fixed loader-wrap bg-blur">
+        <div class="row justify-content-center h-100">
+            <div class="col-auto align-self-center text-center">
+                <div class="doors animated mb-4">
+                    <div class="left-door"></div>
+                    <div class="right-door"></div>
+                </div>
+                <h5 class="mb-0">Cargando</h5>
+                <div class="spinner-border text-primary mt-3" role="status">
+                    <span class="visually-hidden">Cargando...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Background WinDOORS -->
+    <div class="coverimg h-100 w-100 top-0 start-0 position-fixed main-bg">
+        <div class="bg-blur main-bg-overlay"></div>
+        <img src="assets/img/bg-14.jpg" alt="" class="w-100" />
+    </div>
+
+    <main class="main h-100 container-fluid d-flex align-items-center justify-content-center py-5">
+        <div class="col-12 col-sm-10 col-md-7 col-lg-5 col-xl-4">
+            <div class="card border-0 shadow-lg bg-blur">
+                <div class="card-body p-4 p-md-5">
+                    <div class="text-center mb-4">
+                        <img src="assets/img/favicon48.png" alt="Scrapper" class="mb-2" />
+                        <h4 class="fw-bold text-dark mb-1">Plataforma Scrapper</h4>
+                        <p class="small text-secondary mb-0">
+                            Gestión Inteligente de Licitaciones y Monitoreo Multitenant
+                        </p>
+                    </div>
+
+                    <div id="loginErrorAlert" class="alert alert-danger border-0 shadow-sm d-none small mb-3" role="alert"></div>
+
+                    <form id="loginForm" autocomplete="on">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-dark" for="loginEmail">
+                                <i class="bi bi-envelope me-1 text-primary"></i>Correo Electrónico del Usuario
+                            </label>
+                            <input
+                                type="email"
+                                class="form-control"
+                                id="loginEmail"
+                                name="email"
+                                placeholder="usuario@empresa.com.mx"
+                                required
+                                autofocus
+                            />
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="form-label fw-bold small text-dark" for="loginPassword">
+                                <i class="bi bi-shield-lock me-1 text-primary"></i>Contraseña
+                            </label>
+                            <div class="input-group">
+                                <input
+                                    type="password"
+                                    class="form-control"
+                                    id="loginPassword"
+                                    name="password"
+                                    placeholder="Ingresa tu contraseña"
+                                    required
+                                />
+                                <button class="btn btn-outline-secondary" type="button" id="btnToggleLoginPwd" title="Mostrar/Ocultar contraseña">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary py-2 fw-bold" id="btnSubmitLogin">
+                                <i class="bi bi-box-arrow-in-right me-1"></i> Iniciar Sesión
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                <div class="card-footer bg-transparent border-top text-center py-3">
+                    <small class="text-secondary">
+                        Acceso exclusivo para usuarios registrados por su organización.
+                    </small>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="assets/js/jquery-3.3.1.min.js"></script>
+    <script src="assets/js/popper.min.js"></script>
+    <script src="assets/vendor/bootstrap-5/dist/js/bootstrap.bundle.js"></script>
+    <script src="assets/js/main.js"></script>
+    <script src="js/login.app.js"></script>
+</body>
+
+</html>

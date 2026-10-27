@@ -48,17 +48,21 @@ function sanitizeSourceRow(row: any) {
  * GET /api/sources
  * Lista todas las fuentes de interés y las últimas ejecuciones del agente.
  */
-sourcesRouter.get('/', async (_req: Request, res: Response) => {
+sourcesRouter.get('/', async (req: Request, res: Response) => {
   try {
+    const tenantId = req.auth?.activeTenantId || 1;
     const sourcesRes = await db.query(
-      `SELECT * FROM scraping_sources ORDER BY id ASC`
+      `SELECT * FROM scraping_sources WHERE COALESCE(tenant_id, 1) = $1 ORDER BY id ASC`,
+      [tenantId]
     );
     const runsRes = await db.query(
       `SELECT r.*, s.nombre AS source_nombre, s.url AS source_url
        FROM scraping_runs r
        JOIN scraping_sources s ON s.id = r.source_id
+       WHERE COALESCE(s.tenant_id, 1) = $1
        ORDER BY r.created_at DESC
-       LIMIT 40`
+       LIMIT 40`,
+      [tenantId]
     );
 
     res.json({
@@ -99,12 +103,13 @@ sourcesRouter.post('/', async (req: Request, res: Response) => {
   }
 
   try {
+    const tenantId = req.auth?.activeTenantId || 1;
     const insertRes = await db.query(
       `INSERT INTO scraping_sources (
         nombre, entidad, url, keywords, frecuencia_horas, activo,
         requiere_auth, auth_username, auth_password_encrypted, auth_password_masked, auth_login_url,
-        proxima_revision_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW() + ($5 || ' hours')::interval)
+        proxima_revision_at, tenant_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW() + ($5 || ' hours')::interval, $12)
       RETURNING *`,
       [
         d.nombre,
@@ -118,6 +123,7 @@ sourcesRouter.post('/', async (req: Request, res: Response) => {
         encryptedPass,
         maskedPass,
         d.requiere_auth && d.auth_login_url ? d.auth_login_url : null,
+        tenantId,
       ]
     );
 
