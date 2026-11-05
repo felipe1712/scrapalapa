@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { db } from '../../db/pool.js';
 import { tenderIngestionService } from './tender-ingestion.service.js';
 import { claudeService } from '../llm/claude.service.js';
-import { TaskNameSchema, TenderExtractionSchema, TenderExtraction } from '../llm/llm.schemas.js';
+import { TaskNameSchema, TenderExtractionSchema, TenderExtraction, TenderTimelineExtractionSchema, TenderTimelineExtraction } from '../llm/llm.schemas.js';
 import { authService } from '../auth/auth.service.js';
 
 export const tendersRouter = Router();
@@ -393,7 +393,7 @@ tendersRouter.post('/procedures/:id/extract-timeline', async (req: Request, res:
       userPrompt: extractionPrompt,
       toolName: 'extraer_cronograma_fechas',
       toolDescription: 'Extrae el cronograma detallado de fechas, trámites y requisitos indispensables.',
-      zodSchema: TenderExtractionSchema,
+      zodSchema: TenderTimelineExtractionSchema,
       tenderId: `TND-${tenderId}`,
       documentId: 'PROCEDURE-TIMELINE',
     });
@@ -402,18 +402,10 @@ tendersRouter.post('/procedures/:id/extract-timeline', async (req: Request, res:
       throw new Error(extractionRes.fallbackReason || 'No se pudo estructurar el cronograma con IA.');
     }
 
-    const data = extractionRes.data as TenderExtraction;
-    const cronoList = (data.procedimientos && data.procedimientos[0]?.cronograma?.length)
-      ? data.procedimientos[0].cronograma
-      : data.cronograma_general || [];
-
-    const reqsList = (data.procedimientos && data.procedimientos[0]?.requisitos_clave?.length)
-      ? data.procedimientos[0].requisitos_clave
-      : data.requisitos_clave || [];
-
-    const alcance = (data.procedimientos && data.procedimientos[0]?.alcance_periodo)
-      ? data.procedimientos[0].alcance_periodo
-      : '';
+    const data = extractionRes.data as TenderTimelineExtraction;
+    const cronoList = Array.isArray(data.cronograma) ? data.cronograma : [];
+    const reqsList = Array.isArray(data.requisitos_clave) ? data.requisitos_clave : [];
+    const alcance = data.alcance_periodo || '';
 
     // Determinar próximo evento
     let proximoNombre = null;

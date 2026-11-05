@@ -142,7 +142,7 @@ export type UsageQueryInput = z.infer<typeof UsageQuerySchema>;
  */
 export const TenderMilestoneSchema = z.object({
   evento: z.string().describe('Nombre del acto o trámite (ej. Publicación de Convocatoria, Junta de Aclaraciones, Apertura de Proposiciones, Fallo, Firma de Contrato)'),
-  fecha: z.string().describe('Fecha del evento en formato YYYY-MM-DD o DD/MM/YYYY'),
+  fecha: z.string().optional().default('Por definir').describe('Fecha del evento en formato YYYY-MM-DD o DD/MM/YYYY'),
   hora: z.string().optional().default('').describe('Hora del evento (ej. 10:00 hrs)'),
   lugar: z.string().optional().default('').describe('Lugar o modalidad de celebración (ej. Sala de Licitaciones, Remoto por CompraNet)'),
   estado: z.enum(['completado', 'proximo', 'pendiente']).optional().default('proximo'),
@@ -151,11 +151,22 @@ export const TenderMilestoneSchema = z.object({
 export type TenderMilestone = z.infer<typeof TenderMilestoneSchema>;
 
 /**
+ * Esquema específico para extracción y actualización de cronogramas y fechas clave.
+ */
+export const TenderTimelineExtractionSchema = z.object({
+  cronograma: z.array(TenderMilestoneSchema).optional().default([]).describe('Lista cronológica de los actos legales y fechas clave del procedimiento'),
+  requisitos_clave: z.array(z.string()).optional().default([]).describe('Lista de requisitos indispensables técnicos, legales o financieros'),
+  alcance_periodo: z.string().optional().default('').describe('Vigencia, alcance o periodo de contratación'),
+});
+
+export type TenderTimelineExtraction = z.infer<typeof TenderTimelineExtractionSchema>;
+
+/**
  * Procedimiento / Licitación individual identificada dentro de la convocatoria o documento
  */
 export const TenderProcedureSchema = z.object({
-  numero_procedimiento: z.string().describe('Número o código oficial de la licitación (ej. PJCDMX/LPN-01/2026, LA-050GYR-E1-2026)'),
-  titulo_objeto: z.string().describe('Objeto o descripción clara de los bienes, suministros o servicios licitados'),
+  numero_procedimiento: z.string().optional().default('').describe('Número o código oficial de la licitación (ej. PJCDMX/LPN-01/2026, LA-050GYR-E1-2026)'),
+  titulo_objeto: z.string().optional().default('').describe('Objeto o descripción clara de los bienes, suministros o servicios licitados'),
   entidad_convocante: z.string().optional().default('').describe('Organismo o dependencia convocante'),
   alcance_periodo: z.string().optional().default('').describe('Periodo de vigencia del contrato, volumen estimado de partidas o periodicidad del servicio'),
   cronograma: z.array(TenderMilestoneSchema).optional().default([]).describe('Cronograma secuencial de fechas de los actos del procedimiento'),
@@ -172,7 +183,7 @@ export type TenderProcedure = z.infer<typeof TenderProcedureSchema>;
 export const TenderExtractionSchema = z.object({
   titulo_convocatoria: z.string().optional().describe('Título de la publicación, gaceta o documento general'),
   titulo_licitacion: z.string().optional().describe('Título principal o primer procedimiento'),
-  entidad_convocante: z.string().describe('Organismo, dependencia o institución que convoca'),
+  entidad_convocante: z.string().optional().default('').describe('Organismo, dependencia o institución que convoca'),
   procedimientos: z.array(TenderProcedureSchema).optional().default([]).describe('Lista de todos los procedimientos o licitaciones individuales contenidas en el documento'),
   cronograma_general: z.array(TenderMilestoneSchema).optional().default([]).describe('Fechas y actos aplicables a la convocatoria'),
   presupuesto_estimado: z.number().nullable().optional().describe('Monto numérico del presupuesto base o costo de bases si viene publicado'),
