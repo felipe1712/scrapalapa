@@ -27,12 +27,19 @@
             max-height: 720px;
             overflow-y: auto;
         }
+        /* Responsividad estricta para evitar desbordes */
+        .tree-container {
+            overflow-x: hidden;
+            max-width: 100%;
+        }
         .tree-node-doc {
             border: 1px solid #e9ecef;
             border-radius: 8px;
             margin-bottom: 0.6rem;
             background: #ffffff;
             transition: all 0.2s ease;
+            max-width: 100%;
+            overflow: hidden;
         }
         .tree-node-doc:hover {
             border-color: #b6d4fe;
@@ -45,63 +52,117 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
+            max-width: 100%;
+            overflow: hidden;
         }
         .tree-doc-children {
-            padding: 0.25rem 0.5rem 0.5rem 1.75rem;
+            padding: 0.35rem 0.6rem;
             border-top: 1px dashed #e9ecef;
             background: #fafbfe;
             border-bottom-left-radius: 8px;
             border-bottom-right-radius: 8px;
+            max-width: 100%;
+            overflow: hidden;
         }
         .tree-leaf-item {
-            padding: 0.45rem 0.65rem;
-            margin-bottom: 0.3rem;
+            padding: 0.5rem 0.65rem;
+            margin-bottom: 0.35rem;
             border-radius: 6px;
             cursor: pointer;
             transition: all 0.15s ease;
-            border: 1px solid transparent;
+            border: 1px solid #e2e8f0;
+            background: #ffffff;
+            max-width: 100%;
+            overflow: hidden;
+            word-break: break-word;
         }
         .tree-leaf-item:hover {
-            background: #eef2ff;
-            border-color: #cbd5e1;
+            background: #f0f7ff;
+            border-color: #93c5fd;
         }
         .tree-leaf-item.active {
             background: #0d6efd;
+            border-color: #0d6efd;
             color: #ffffff !important;
             box-shadow: 0 2px 6px rgba(13, 110, 253, 0.25);
         }
         .tree-leaf-item.active * {
             color: #ffffff !important;
         }
-        .tree-leaf-item.active .badge {
+        .tree-leaf-item.active .badge.bg-primary {
             background: #ffffff !important;
             color: #0d6efd !important;
         }
-
-        /* Timeline Horizontal / Stepper */
-        .timeline-stepper {
-            display: flex;
-            overflow-x: auto;
-            padding-bottom: 0.5rem;
-            gap: 1rem;
+        .tree-leaf-item.active .badge.border {
+            border-color: rgba(255,255,255,0.4) !important;
+            color: #ffffff !important;
+            background: transparent !important;
         }
-        .timeline-step {
-            flex: 0 0 170px;
-            padding: 0.75rem;
-            border-radius: 8px;
-            border: 1px solid #e2e8f0;
-            background: #ffffff;
+        .tree-leaf-code {
+            font-size: 0.72rem;
+            max-width: 100%;
+            white-space: normal;
+            word-break: break-all;
+            line-height: 1.25;
+            display: inline-block;
+        }
+        #detailProcCodeBadge {
+            max-width: 100%;
+            white-space: normal;
+            word-break: break-all;
+            display: inline-block;
+            line-height: 1.35;
+        }
+
+        /* Timeline WinDOORS Anpassung */
+        .timeline-windoors.left-only {
+            padding-left: 0;
+            margin-bottom: 0;
             position: relative;
         }
-        .timeline-step.upcoming {
-            border-color: #0d6efd;
-            background: #f0f7ff;
-            box-shadow: 0 2px 8px rgba(13, 110, 253, 0.15);
+        .timeline-windoors.left-only li {
+            margin-bottom: 1.25rem;
+            position: relative;
         }
-        .timeline-step.completed {
-            border-color: #198754;
-            background: #f4fbf7;
+        .timeline-windoors.left-only li .card {
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            transition: all 0.2s ease;
         }
+        .timeline-windoors.left-only li .card:hover {
+            border-color: #93c5fd;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.06);
+        }
+        .timeline-windoors.left-only li.step-completed .card {
+            border-left: 5px solid #198754;
+        }
+        .timeline-windoors.left-only li.step-upcoming .card {
+            border-left: 5px solid #0d6efd;
+            background: #f8fbff;
+        }
+        .timeline-windoors.left-only li.step-pending .card {
+            border-left: 5px solid #adb5bd;
+        }
+
+        /* Requisitos Grid & Cards */
+        .requisito-card {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 0.75rem 1rem;
+            margin-bottom: 0.5rem;
+            font-size: 0.88rem;
+            display: flex;
+            align-items: flex-start;
+            gap: 0.6rem;
+            word-break: break-word;
+        }
+        .requisito-card i {
+            font-size: 1.15rem;
+            flex-shrink: 0;
+            margin-top: 0.05rem;
+        }
+
         .raw-ocr-box {
             font-family: 'Courier New', Courier, monospace;
             font-size: 0.85rem;
@@ -113,6 +174,7 @@
             color: #f8fafc;
             border-radius: 6px;
             padding: 1rem;
+            word-break: break-word;
         }
     </style>
 </head>
@@ -272,25 +334,25 @@
                 <div class="card-body p-3 p-md-4">
                     <form id="ingestUrlForm" novalidate>
                         <div class="row g-3 align-items-end">
-                            <div class="col-12 col-lg-5">
+                            <div class="col-12 col-md-6 col-xxl-5">
                                 <label for="tenderUrlInput" class="form-label fw-bold text-dark mb-1">
                                     <i class="bi bi-globe2 text-theme me-1"></i> URL de la Licitación o Portal de Convocatorias
                                 </label>
                                 <div class="input-group input-group-lg border rounded">
                                     <span class="input-group-text bg-white border-0 text-theme"><i class="bi bi-link-45deg fs-4"></i></span>
-                                    <input type="url" id="tenderUrlInput" class="form-control border-0" placeholder="https://ejemplo.gob.mx/licitaciones/... o enlace directo a .pdf / .docx" required>
+                                    <input type="url" id="tenderUrlInput" class="form-control border-0" placeholder="https://ejemplo.gob.mx/... o enlace a .pdf / .docx" required>
                                 </div>
                             </div>
-                            <div class="col-12 col-lg-4">
+                            <div class="col-12 col-md-6 col-xxl-4">
                                 <label for="tenderKeywordsInput" class="form-label fw-bold text-dark mb-1">
-                                    <i class="bi bi-search text-theme me-1"></i> Palabras Clave <span class="fw-normal text-secondary small">(búsqueda automática con y sin acentos)</span>
+                                    <i class="bi bi-search text-theme me-1"></i> Palabras Clave <span class="fw-normal text-secondary small">(búsqueda con y sin acentos)</span>
                                 </label>
                                 <div class="input-group input-group-lg border rounded">
                                     <span class="input-group-text bg-white border-0 text-theme"><i class="bi bi-tags fs-5"></i></span>
-                                    <input type="text" id="tenderKeywordsInput" class="form-control border-0" placeholder="mantenimiento, desarrollo, adquisición, fumigación" value="mantenimiento, desarrollo, adquisición">
+                                    <input type="text" id="tenderKeywordsInput" class="form-control border-0" placeholder="mantenimiento, desarrollo, fumigación..." value="mantenimiento, desarrollo, adquisición">
                                 </div>
                             </div>
-                            <div class="col-12 col-lg-3">
+                            <div class="col-12 col-md-12 col-xxl-3">
                                 <button type="submit" id="btnIngestUrl" class="btn btn-theme btn-lg w-100">
                                     <i class="bi bi-cloud-arrow-down-fill me-2"></i> Buscar y Extraer
                                 </button>
@@ -398,26 +460,26 @@
 
                         <!-- Tarjeta de Encabezado y Acciones de la Licitación -->
                         <div class="card border-0 shadow-sm mb-3">
-                            <div class="card-body p-4">
+                            <div class="card-body p-3 p-md-4">
                                 <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
-                                    <div class="flex-grow-1">
+                                    <div class="flex-grow-1" style="min-width: 260px; max-width: 100%;">
                                         <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
                                             <span id="detailProcCodeBadge" class="badge bg-primary fs-6 px-3 py-2">-</span>
                                             <span id="detailStatusBadge" class="badge bg-success-subtle text-success border border-success-subtle">Vigente</span>
                                             <span id="detailSourceBadge" class="badge bg-light text-dark border">-</span>
                                         </div>
-                                        <h4 id="detailProcTitle" class="fw-bold text-dark mb-1">Cargando licitación...</h4>
-                                        <div class="small text-secondary mb-2">
-                                            <i class="bi bi-building me-1"></i><span id="detailEntidadText">-</span>
+                                        <h4 id="detailProcTitle" class="fw-bold text-dark mb-1" style="word-break: break-word;">Cargando licitación...</h4>
+                                        <div class="small text-secondary mb-2" style="word-break: break-word;">
+                                            <i class="bi bi-building me-1 text-primary"></i><span id="detailEntidadText" class="fw-medium text-dark">-</span>
                                             <span class="mx-2">·</span>
-                                            <i class="bi bi-link-45deg me-1"></i><a href="#" target="_blank" id="detailSourceUrlLink" class="text-secondary text-truncate d-inline-block align-bottom" style="max-width: 320px;">-</a>
+                                            <i class="bi bi-link-45deg me-1"></i><a href="#" target="_blank" id="detailSourceUrlLink" class="text-secondary text-truncate d-inline-block align-bottom" style="max-width: 380px;">-</a>
                                         </div>
                                     </div>
                                     <div class="d-flex flex-wrap gap-2 align-items-center">
-                                        <button type="button" id="btnViewRawOcr" class="btn btn-sm btn-outline-dark" title="Inspeccionar texto íntegro leído por OCR">
+                                        <button type="button" id="btnViewRawOcr" class="btn btn-sm btn-outline-dark" title="Inspeccionar texto íntegro leído por OCR o por navegador">
                                             <i class="bi bi-file-earmark-text me-1"></i> Ver Texto OCR (Raw)
                                         </button>
-                                        <button type="button" id="btnReanalyzeProc" class="btn btn-sm btn-outline-primary" data-task="resumen_licitacion">
+                                        <button type="button" id="btnReanalyzeProc" class="btn btn-sm btn-outline-primary" title="Re-analizar con IA">
                                             <i class="bi bi-arrow-repeat me-1"></i> Regenerar Síntesis
                                         </button>
                                         <button type="button" id="btnToggleViewerCard" class="btn btn-sm btn-theme">
@@ -428,25 +490,54 @@
                             </div>
                         </div>
 
-                        <!-- TARJETA: CRONOGRAMA DEL PROCESO & LÍNEA DE TIEMPO (TIMELINE) -->
+                        <!-- ============================================================= -->
+                        <!-- CRONOGRAMA DE ACTOS & LÍNEA DE TIEMPO (TIMELINE WINDOORS)    -->
+                        <!-- ============================================================= -->
                         <div class="card border-0 shadow-sm mb-3">
-                            <div class="card-header bg-none border-0 pt-3 pb-0 d-flex justify-content-between align-items-center">
-                                <div>
-                                    <h6 class="title mb-0">
-                                        <i class="bi bi-calendar-week text-primary me-2"></i>Cronograma de Actos &amp; Trámites
-                                    </h6>
-                                    <small class="text-secondary">Fechas clave extraídas del documento oficial (Junta de Aclaraciones, Apertura, Fallo, etc.)</small>
+                            <div class="card-header bg-none border-0 pt-3 pb-2">
+                                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                                    <div>
+                                        <h6 class="title mb-0">
+                                            <i class="bi bi-calendar-week text-primary me-2"></i>Cronograma de Actos &amp; Trámites
+                                        </h6>
+                                        <small class="text-secondary">Fechas clave de los actos legales (Junta de Aclaraciones, Apertura, Fallo, Firma de Contrato)</small>
+                                    </div>
+                                    <div class="d-flex flex-wrap align-items-center gap-2">
+                                        <span id="detailNextMilestoneAlert" class="badge bg-warning text-dark px-3 py-2 d-none">
+                                            <i class="bi bi-clock-history me-1"></i><span id="detailNextMilestoneText">Próximo trámite</span>
+                                        </span>
+                                        <div class="btn-group btn-group-sm" role="group">
+                                            <button type="button" id="btnTimelineViewCards" class="btn btn-outline-secondary active" title="Vista Gráfica WinDOORS">
+                                                <i class="bi bi-diagram-3 me-1"></i> Timeline
+                                            </button>
+                                            <button type="button" id="btnTimelineViewTable" class="btn btn-outline-secondary" title="Vista Tabla">
+                                                <i class="bi bi-table me-1"></i> Tabla
+                                            </button>
+                                        </div>
+                                        <button type="button" id="btnExtractTimelineIa" class="btn btn-sm btn-outline-primary" title="Re-analizar texto y extraer fechas con Claude">
+                                            <i class="bi bi-lightning-charge me-1"></i> Extraer Fechas con IA
+                                        </button>
+                                    </div>
                                 </div>
-                                <span id="detailNextMilestoneAlert" class="badge bg-warning text-dark px-3 py-2 d-none">
-                                    <i class="bi bi-clock-history me-1"></i><span id="detailNextMilestoneText">Próximo trámite</span>
-                                </span>
                             </div>
-                            <div class="card-body">
-                                <!-- Widget Visual de Línea de Tiempo (Stepper) -->
-                                <div class="timeline-stepper mb-4" id="detailTimelineStepper"></div>
+                            <div class="card-body p-3 p-md-4">
+                                <!-- Banner cuando no hay fechas detectadas -->
+                                <div id="timelineEmptyBanner" class="alert alert-light border text-center py-3 d-none mb-0">
+                                    <i class="bi bi-calendar-x fs-4 text-secondary d-block mb-1"></i>
+                                    <div class="fw-bold text-dark small mb-1">No se detectó un cronograma de fechas específico en el extracto inicial.</div>
+                                    <div class="small text-secondary mb-2">Puedes extraer automáticamente los actos con Claude haciendo clic en el botón de abajo.</div>
+                                    <button type="button" class="btn btn-sm btn-primary" onclick="document.getElementById('btnExtractTimelineIa')?.click()">
+                                        <i class="bi bi-lightning-charge me-1"></i> Analizar y Extraer Fechas Ahora
+                                    </button>
+                                </div>
 
-                                <!-- Tabla Detallada de Eventos -->
-                                <div class="table-responsive">
+                                <!-- Vista Gráfica Timeline Nativa de WinDOORS (.timeline-windoors.left-only) -->
+                                <div id="timelineGraphicWrapper">
+                                    <ul class="timeline-windoors left-only mb-0" id="detailTimelineWindoors"></ul>
+                                </div>
+
+                                <!-- Vista Tabla de Eventos -->
+                                <div class="table-responsive d-none mt-2" id="detailTimelineTableWrapper">
                                     <table class="table table-sm table-hover align-middle small mb-0">
                                         <thead class="table-light">
                                             <tr>
@@ -463,43 +554,67 @@
                             </div>
                         </div>
 
-                        <!-- TARJETAS DE ALCANCE Y SÍNTESIS EJECUTIVA -->
-                        <div class="row g-3 mb-3">
-                            <div class="col-12 col-lg-8">
-                                <div class="card border-0 shadow-sm h-100">
-                                    <div class="card-header bg-none border-0 pt-3 pb-0">
-                                        <h6 class="title mb-0"><i class="bi bi-journal-text text-primary me-2"></i>Síntesis Ejecutiva de la Licitación</h6>
-                                    </div>
-                                    <div class="card-body">
-                                        <div id="detailClaudeSynthesis" class="p-3 rounded bg-light border synthesis-box"></div>
-                                    </div>
+                        <!-- ============================================================= -->
+                        <!-- PANEL INFERIOR: REQUISITOS OBLIGATORIOS & NOTAS TÉCNICAS      -->
+                        <!-- (Movido abajo del cronograma conforme a solicitud)           -->
+                        <!-- ============================================================= -->
+                        <div class="card border-0 shadow-sm mb-3">
+                            <div class="card-header bg-none border-0 pt-3 pb-2">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <h6 class="title mb-0">
+                                        <i class="bi bi-check2-square text-success me-2"></i>Requisitos Obligatorios &amp; Condiciones de Participación
+                                    </h6>
+                                    <span class="badge bg-light text-secondary border">Documentación Indispensable</span>
                                 </div>
                             </div>
-                            <div class="col-12 col-lg-4">
-                                <!-- Alcance y Periodo del Servicio (Sustituye el presupuesto obligatorio) -->
-                                <div class="card border-0 shadow-sm mb-3">
-                                    <div class="card-header bg-none border-0 pt-3 pb-0">
-                                        <h6 class="title mb-0"><i class="bi bi-clock me-1 text-primary"></i>Alcance y Periodo del Contrato</h6>
+                            <div class="card-body p-3 p-md-4">
+                                <!-- Alcance y Periodo del Contrato -->
+                                <div class="p-3 mb-3 rounded bg-light border">
+                                    <div class="row align-items-center">
+                                        <div class="col-12 col-md-8">
+                                            <div class="small fw-bold text-dark mb-1">
+                                                <i class="bi bi-clock-history text-primary me-1"></i>Alcance y Periodo del Servicio / Contrato:
+                                            </div>
+                                            <div id="detailAlcancePeriodo" class="small text-dark fw-medium">Periodo especificado en bases y pliego de requisitos técnicos.</div>
+                                        </div>
+                                        <div class="col-12 col-md-4 text-md-end mt-2 mt-md-0">
+                                            <span class="badge bg-white text-secondary border small">
+                                                <i class="bi bi-cash-stack me-1"></i>Cotización por catálogo de conceptos
+                                            </span>
+                                        </div>
                                     </div>
-                                    <div class="card-body">
-                                        <div id="detailAlcancePeriodo" class="small text-dark fw-medium mb-1">Periodo especificado en bases.</div>
-                                        <small class="text-secondary d-block" id="detailPresupuestoNota"></small>
+                                    <div class="text-secondary small mt-2 border-top pt-2" id="detailPresupuestoNota" style="font-size: 0.78rem;">
+                                        Nota: En licitaciones públicas la suficiencia presupuestal es de carácter interno/reservado de la dependencia; las ofertas se evalúan con base en propuestas técnicas y precios unitarios.
                                     </div>
                                 </div>
 
-                                <!-- Requisitos Técnicos y Legales -->
-                                <div class="card border-0 shadow-sm">
-                                    <div class="card-header bg-none border-0 pt-3 pb-0">
-                                        <h6 class="title mb-0"><i class="bi bi-check2-square text-success me-1"></i>Requisitos Obligatorios</h6>
-                                    </div>
-                                    <div class="card-body">
-                                        <ul id="detailRequisitosList" class="list-group list-group-flush small"></ul>
-                                    </div>
+                                <!-- Lista de Requisitos Obligatorios -->
+                                <div class="row g-2" id="detailRequisitosList">
+                                    <!-- Generado dinámicamente -->
                                 </div>
                             </div>
                         </div>
 
-                        <!-- VISOR PDF IN-SITU PERSISTENTE EMBEBIDO EN LA PARTE INFERIOR DEL DETALLE -->
+                        <!-- ============================================================= -->
+                        <!-- PANEL: SÍNTESIS EJECUTIVA DE LA LICITACIÓN                    -->
+                        <!-- ============================================================= -->
+                        <div class="card border-0 shadow-sm mb-3">
+                            <div class="card-header bg-none border-0 pt-3 pb-2">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <h6 class="title mb-0">
+                                        <i class="bi bi-journal-text text-primary me-2"></i>Síntesis Ejecutiva de la Licitación
+                                    </h6>
+                                    <span class="badge bg-light text-primary border">Resumen Inteligente Claude</span>
+                                </div>
+                            </div>
+                            <div class="card-body p-3 p-md-4">
+                                <div id="detailClaudeSynthesis" class="p-3 rounded bg-light border synthesis-box" style="line-height: 1.6;"></div>
+                            </div>
+                        </div>
+
+                        <!-- ============================================================= -->
+                        <!-- VISOR PDF / DOCUMENTO FUENTE IN-SITU PERSISTENTE             -->
+                        <!-- ============================================================= -->
                         <div id="detailPdfViewerCard" class="card border-0 shadow-sm mb-4">
                             <div class="card-header bg-none border-0 pt-3 pb-2">
                                 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
@@ -516,6 +631,18 @@
                                         </a>
                                         <a href="#" id="detailViewerDownloadLink" class="btn btn-sm btn-theme">
                                             <i class="bi bi-download me-1"></i> Descargar
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="card-body p-2">
+                                <iframe id="detailPdfViewerFrame" src="about:blank" class="w-100 rounded border" style="height: 640px; background: #f4f6f8;"></iframe>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
                                         </a>
                                     </div>
                                 </div>

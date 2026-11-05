@@ -10,6 +10,7 @@
     treeData: [],
     cachedProcedures: new Map(),
     isIngesting: false,
+    activeTimelineView: 'cards', // 'cards' | 'table'
   };
 
   // Helper: Escape HTML
@@ -62,7 +63,6 @@
     // Bullet points
     html = html.replace(/^\s*[-*]\s+(.*$)/gim, '<li class="mb-1">$1</li>');
     html = html.replace(/(<li class="mb-1">.*<\/li>)/gim, '<ul class="mb-2 ps-3">$1</ul>');
-    // Fix multiple adjacent ul
     html = html.replace(/<\/ul>\s*<ul class="mb-2 ps-3">/gim, '');
 
     // Line breaks
@@ -166,7 +166,6 @@
         targetProcId = state.activeProcedureId;
       }
 
-      // If target exists in tree, select it; otherwise select the very first procedure
       let found = false;
       if (targetProcId) {
         for (const parent of state.treeData) {
@@ -208,7 +207,7 @@
       const parentMatches =
         normQuery === '' ||
         normalizeText(doc.titulo).includes(normQuery) ||
-        normalizeText(doc.entidad_convocante).includes(normQuery);
+        normalizeText(doc.entidad).includes(normQuery);
 
       const matchingProcedures = procedures.filter((p) => {
         if (normQuery === '') return true;
@@ -222,7 +221,7 @@
       });
 
       if (normQuery !== '' && !parentMatches && matchingProcedures.length === 0) {
-        return; // filter out
+        return;
       }
 
       visibleParents++;
@@ -239,19 +238,19 @@
 
       parentCard.innerHTML = `
         <div class="tree-doc-header" data-doc-id="${doc.id}">
-          <div class="d-flex align-items-center text-truncate pe-2">
+          <div class="d-flex align-items-center text-truncate pe-2" style="max-width: 82%;">
             <i class="bi bi-file-earmark-pdf text-danger fs-5 me-2 flex-shrink-0"></i>
             <div class="text-truncate">
               <div class="fw-bold text-dark small text-truncate" title="${escapeHtml(doc.titulo || 'Convocatoria')}">
-                ${escapeHtml(doc.titulo || 'Convocatoria sin título')}
+                ${escapeHtml(doc.titulo || 'Convocatoria')}
               </div>
-              <div class="text-secondary" style="font-size: 0.75rem;">
-                <span>${escapeHtml(doc.entidad_convocante || 'Entidad')}</span> · <span>${docDate}</span>
+              <div class="text-secondary text-truncate" style="font-size: 0.72rem;">
+                <span>${escapeHtml(doc.entidad || 'Entidad')}</span> · <span>${docDate}</span>
               </div>
             </div>
           </div>
           <div class="d-flex align-items-center gap-1 flex-shrink-0">
-            <span class="badge bg-light text-primary border rounded-pill" style="font-size: 0.72rem;">${procCount} ${procCount === 1 ? 'proc' : 'procs'}</span>
+            <span class="badge bg-light text-primary border rounded-pill" style="font-size: 0.7rem;">${procCount} ${procCount === 1 ? 'proc' : 'procs'}</span>
             <i class="bi ${chevronClass} text-secondary fs-6 toggle-arrow"></i>
           </div>
         </div>
@@ -263,16 +262,16 @@
                   .map((proc) => {
                     const isActive = proc.id === state.activeProcedureId;
                     const code = escapeHtml(proc.numero_procedimiento || `PROC-${proc.id}`);
-                    const title = escapeHtml(proc.titulo || proc.objeto || 'Sin descripción');
+                    const title = escapeHtml(proc.titulo || proc.objeto || doc.titulo || 'Licitación');
                     const nextEvt = proc.proximo_evento_nombre
-                      ? `<div class="text-truncate mt-1" style="font-size: 0.72rem; color: #b45309;"><i class="bi bi-calendar-event me-1"></i>${escapeHtml(proc.proximo_evento_nombre)}: ${formatDate(proc.proximo_evento_fecha)}</div>`
+                      ? `<div class="text-truncate mt-1" style="font-size: 0.7rem; color: #b45309;"><i class="bi bi-calendar-event me-1"></i>${escapeHtml(proc.proximo_evento_nombre)}: ${formatDate(proc.proximo_evento_fecha)}</div>`
                       : '';
 
                     return `
                       <div class="tree-leaf-item ${isActive ? 'active' : ''}" data-proc-id="${proc.id}">
-                        <div class="d-flex justify-content-between align-items-center">
-                          <span class="badge bg-primary text-white" style="font-size: 0.72rem;">${code}</span>
-                          <span class="badge bg-light text-secondary border" style="font-size: 0.68rem;">${escapeHtml(proc.estado || 'Vigente')}</span>
+                        <div class="d-flex justify-content-between align-items-start gap-1">
+                          <span class="tree-leaf-code fw-bold">${code}</span>
+                          <span class="badge border bg-light text-secondary flex-shrink-0" style="font-size: 0.65rem;">${escapeHtml(proc.estado || 'Vigente')}</span>
                         </div>
                         <div class="small fw-semibold text-truncate mt-1" title="${title}">
                           ${title}
@@ -286,13 +285,12 @@
         </div>
       `;
 
-      // Event listener: Toggle parent collapse
+      // Toggle parent collapse
       const headerEl = parentCard.querySelector('.tree-doc-header');
       const childrenEl = parentCard.querySelector('.tree-doc-children');
       const arrowEl = parentCard.querySelector('.toggle-arrow');
 
-      headerEl?.addEventListener('click', (e) => {
-        // Toggle children visibility
+      headerEl?.addEventListener('click', () => {
         const isCurrentlyHidden = childrenEl?.classList.contains('d-none');
         if (isCurrentlyHidden) {
           childrenEl?.classList.remove('d-none');
@@ -303,11 +301,11 @@
         }
       });
 
-      // Event listeners: Procedure item click
+      // Procedure item click
       parentCard.querySelectorAll('.tree-leaf-item').forEach((item) => {
         item.addEventListener('click', (e) => {
           e.stopPropagation();
-          const procId = parseInt(item.getAttribute('data-proc-id'), 10);
+          const procId = item.getAttribute('data-proc-id');
           if (procId) {
             selectProcedure(procId);
           }
@@ -331,10 +329,9 @@
 
     // Highlight active leaf in tree
     document.querySelectorAll('.tree-leaf-item').forEach((el) => {
-      const pid = parseInt(el.getAttribute('data-proc-id'), 10);
-      if (pid === procedureId) {
+      const pid = el.getAttribute('data-proc-id');
+      if (String(pid) === String(procedureId)) {
         el.classList.add('active');
-        // Ensure its parent container is expanded
         const parentContainer = el.closest('.tree-doc-children');
         if (parentContainer?.classList.contains('d-none')) {
           parentContainer.classList.remove('d-none');
@@ -346,12 +343,10 @@
       }
     });
 
-    // Show detail panel, hide empty state
     document.getElementById('emptyProcedureState')?.classList.add('d-none');
     const detailWrapper = document.getElementById('procedureDetailWrapper');
     detailWrapper?.classList.remove('d-none');
 
-    // Fetch full procedure detail
     try {
       let proc = state.cachedProcedures.get(procedureId);
       if (!proc) {
@@ -385,17 +380,18 @@
     if (statusBadge) statusBadge.textContent = proc.estado || 'Vigente';
 
     const sourceBadge = document.getElementById('detailSourceBadge');
-    if (sourceBadge) sourceBadge.textContent = parentTender.fuente_nombre || 'Portal Convocante';
+    if (sourceBadge) sourceBadge.textContent = parentTender.source_nombre || parentTender.fuente_nombre || 'Portal Convocante';
 
     const titleEl = document.getElementById('detailProcTitle');
-    if (titleEl) titleEl.textContent = proc.titulo || proc.objeto || 'Procedimiento sin título';
+    const realTitle = proc.titulo || proc.titulo_objeto || parentTender.titulo || 'Licitación Pública';
+    if (titleEl) titleEl.textContent = realTitle;
 
     const entidadEl = document.getElementById('detailEntidadText');
-    if (entidadEl) entidadEl.textContent = proc.entidad || parentTender.entidad_convocante || 'Entidad no especificada';
+    if (entidadEl) entidadEl.textContent = proc.entidad || parentTender.entidad || 'Entidad no especificada';
 
     const sourceLinkEl = document.getElementById('detailSourceUrlLink');
     if (sourceLinkEl) {
-      const url = parentTender.url_fuente || '#';
+      const url = parentTender.source_url || '#';
       sourceLinkEl.href = url;
       sourceLinkEl.textContent = url !== '#' ? url : 'Enlace no disponible';
     }
@@ -403,55 +399,33 @@
     // Cronograma & Milestones
     renderCronogramaAndTimeline(proc);
 
+    // Requisitos Obligatorios & Alcance
+    renderRequisitosAndAlcance(proc, parentTender);
+
     // Executive Synthesis
     const synthEl = document.getElementById('detailClaudeSynthesis');
-    const synthesisText = proc.resumen_ejecutivo || parentTender.resumen_ejecutivo || '';
+    const synthesisText = proc.sintesis_claude || proc.resumen_ejecutivo || parentTender.sintesis_claude || '';
     if (synthEl) {
       synthEl.innerHTML = renderMarkdown(synthesisText);
     }
 
-    // Alcance y Periodo del Contrato (reemplaza presupuesto)
-    const alcanceEl = document.getElementById('detailAlcancePeriodo');
-    if (alcanceEl) {
-      alcanceEl.textContent = proc.alcance_periodo || parentTender.objeto_licitacion || 'Especificado en pliego de requisitos técnicos y catálogo de conceptos.';
-    }
-    const presNotaEl = document.getElementById('detailPresupuestoNota');
-    if (presNotaEl) {
-      presNotaEl.textContent = 'En apego a la normatividad de adquisiciones públicas, la suficiencia presupuestal es de carácter reservado; la oferta se evalúa por precio unitario.';
-    }
-
-    // Requisitos Clave
-    const reqListEl = document.getElementById('detailRequisitosList');
-    if (reqListEl) {
-      reqListEl.innerHTML = '';
-      const reqs = Array.isArray(proc.requisitos_clave) && proc.requisitos_clave.length > 0
-        ? proc.requisitos_clave
-        : Array.isArray(parentTender.requisitos_clave) && parentTender.requisitos_clave.length > 0
-        ? parentTender.requisitos_clave
-        : ['Presentar acreditación de existencia legal', 'Garantía de seriedad de propuesta', 'Opinión de cumplimiento SAT en sentido positivo (32-D)'];
-
-      reqs.forEach((r) => {
-        const li = document.createElement('li');
-        li.className = 'list-group-item px-0 py-2 border-0 d-flex align-items-start';
-        li.innerHTML = `<i class="bi bi-check2-circle text-success me-2 mt-1 flex-shrink-0"></i><span>${escapeHtml(r)}</span>`;
-        reqListEl.appendChild(li);
-      });
-    }
-
     // Persistent PDF Viewer & Attached Documents
-    setupPdfViewer(attachedDocs, proc);
+    setupPdfViewer(attachedDocs, parentTender);
   }
 
-  // Render Visual Timeline Stepper & Table
+  // Render Cronograma (WinDOORS Native Timeline + Table)
   function renderCronogramaAndTimeline(proc) {
-    const stepperEl = document.getElementById('detailTimelineStepper');
+    const windoorsList = document.getElementById('detailTimelineWindoors');
     const tbodyEl = document.getElementById('detailTimelineTableBody');
     const nextAlertEl = document.getElementById('detailNextMilestoneAlert');
     const nextTextEl = document.getElementById('detailNextMilestoneText');
+    const emptyBanner = document.getElementById('timelineEmptyBanner');
+    const graphicWrapper = document.getElementById('timelineGraphicWrapper');
+    const tableWrapper = document.getElementById('detailTimelineTableWrapper');
 
-    if (!stepperEl || !tbodyEl) return;
+    if (!windoorsList || !tbodyEl) return;
 
-    stepperEl.innerHTML = '';
+    windoorsList.innerHTML = '';
     tbodyEl.innerHTML = '';
 
     const cronograma = Array.isArray(proc.cronograma) ? proc.cronograma : [];
@@ -467,62 +441,74 @@
     }
 
     if (cronograma.length === 0) {
-      stepperEl.innerHTML = `
-        <div class="text-secondary small p-3 bg-light rounded text-center w-100">
-          <i class="bi bi-info-circle me-1"></i> No se detectaron fechas específicas de calendario en el extracto analizado.
-        </div>
-      `;
-      tbodyEl.innerHTML = `
-        <tr>
-          <td colspan="5" class="text-center text-secondary py-3">Sin trámites programados en base de datos.</td>
-        </tr>
-      `;
+      emptyBanner?.classList.remove('d-none');
+      graphicWrapper?.classList.add('d-none');
+      tableWrapper?.classList.add('d-none');
       return;
     }
 
-    // Sort or preserve chronological order
-    cronograma.forEach((item, idx) => {
-      const isCompleted = item.completado === true;
-      const isNext = proc.proximo_evento_nombre && item.acto && item.acto.toLowerCase().includes(proc.proximo_evento_nombre.toLowerCase());
+    emptyBanner?.classList.add('d-none');
+    if (state.activeTimelineView === 'cards') {
+      graphicWrapper?.classList.remove('d-none');
+      tableWrapper?.classList.add('d-none');
+    } else {
+      graphicWrapper?.classList.add('d-none');
+      tableWrapper?.classList.remove('d-none');
+    }
 
-      let stepClass = 'timeline-step';
-      let icon = 'bi-circle';
+    const themeColors = ['theme-blue', 'theme-yellow', 'theme-green', 'theme-purple'];
+
+    cronograma.forEach((item, idx) => {
+      const eventName = item.evento || item.acto || item.nombre || `Trámite ${idx + 1}`;
+      const isCompleted = item.estado === 'completado' || item.completado === true;
+      const isUpcoming = item.estado === 'proximo' || (proc.proximo_evento_nombre && eventName.toLowerCase().includes(proc.proximo_evento_nombre.toLowerCase()));
+
+      const themeClass = themeColors[idx % themeColors.length];
+      let stepStateClass = 'step-pending';
       let badgeHtml = '<span class="badge bg-secondary">Pendiente</span>';
 
       if (isCompleted) {
-        stepClass += ' completed';
-        icon = 'bi-check-circle-fill text-success';
-        badgeHtml = '<span class="badge bg-success">Completado</span>';
-      } else if (isNext) {
-        stepClass += ' upcoming';
-        icon = 'bi-clock-fill text-primary';
-        badgeHtml = '<span class="badge bg-primary">Próximo</span>';
+        stepStateClass = 'step-completed';
+        badgeHtml = '<span class="badge bg-success"><i class="bi bi-check2 me-1"></i>Completado</span>';
+      } else if (isUpcoming) {
+        stepStateClass = 'step-upcoming';
+        badgeHtml = '<span class="badge bg-primary"><i class="bi bi-clock-history me-1"></i>Próximo</span>';
       }
 
-      // Stepper card
-      const stepDiv = document.createElement('div');
-      stepDiv.className = stepClass;
-      stepDiv.innerHTML = `
-        <div class="d-flex align-items-center justify-content-between mb-1">
-          <span class="small fw-bold text-secondary">Paso ${idx + 1}</span>
-          <i class="bi ${icon}"></i>
-        </div>
-        <div class="fw-bold text-dark small text-truncate" title="${escapeHtml(item.acto)}">
-          ${escapeHtml(item.acto)}
-        </div>
-        <div class="text-primary small fw-semibold mt-1">
-          <i class="bi bi-calendar3 me-1"></i>${formatDate(item.fecha)}
-        </div>
-        <div class="text-secondary" style="font-size: 0.72rem;">
-          ${escapeHtml(item.hora || 'Hora en bases')}
+      // 1. Elemento del Timeline Nativo de WinDOORS (.timeline-windoors.left-only)
+      const li = document.createElement('li');
+      li.className = `${themeClass} left-timeline ${stepStateClass}`;
+      li.innerHTML = `
+        <div class="card border-0 mb-3 shadow-sm">
+          <div class="card-body p-3">
+            <div class="d-flex flex-wrap justify-content-between align-items-center mb-1 gap-2">
+              <span class="badge bg-light text-dark border">
+                Paso ${idx + 1}
+              </span>
+              <span class="small fw-bold text-dark">
+                <i class="bi bi-calendar3 me-1 text-primary"></i>${formatDate(item.fecha)}
+              </span>
+            </div>
+            <h6 class="fw-bold text-dark mb-1" style="word-break: break-word;">
+              ${escapeHtml(eventName)}
+            </h6>
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-2 pt-1 border-top" style="font-size: 0.78rem;">
+              <span class="text-secondary">
+                <i class="bi bi-clock me-1 text-primary"></i>${escapeHtml(item.hora || 'Hora en bases')}
+                <span class="mx-1">·</span>
+                <i class="bi bi-geo-alt me-1 text-danger"></i>${escapeHtml(item.lugar || 'Sede oficial / CompraNet')}
+              </span>
+              <div>${badgeHtml}</div>
+            </div>
+          </div>
         </div>
       `;
-      stepperEl.appendChild(stepDiv);
+      windoorsList.appendChild(li);
 
-      // Table row
+      // 2. Fila de la tabla alternativa
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td class="fw-semibold text-dark">${escapeHtml(item.acto)}</td>
+        <td class="fw-semibold text-dark">${escapeHtml(eventName)}</td>
         <td><i class="bi bi-calendar3 text-secondary me-1"></i>${formatDate(item.fecha)}</td>
         <td>${escapeHtml(item.hora || 'No especificada')}</td>
         <td class="text-secondary">${escapeHtml(item.lugar || 'Oficinas convocante / Sistema')}</td>
@@ -532,9 +518,47 @@
     });
   }
 
+  // Render Requisitos Obligatorios & Alcance (Panel ubicado abajo del Cronograma)
+  function renderRequisitosAndAlcance(proc, parentTender) {
+    const alcanceEl = document.getElementById('detailAlcancePeriodo');
+    if (alcanceEl) {
+      alcanceEl.textContent =
+        proc.alcance_periodo ||
+        parentTender.objeto_licitacion ||
+        'Conforme a bases, pliego de requisitos técnicos y especificaciones del anexo.';
+    }
+
+    const reqContainer = document.getElementById('detailRequisitosList');
+    if (!reqContainer) return;
+    reqContainer.innerHTML = '';
+
+    const reqs = Array.isArray(proc.requisitos_clave) && proc.requisitos_clave.length > 0
+      ? proc.requisitos_clave
+      : Array.isArray(parentTender.campos_extraidos_json?.requisitos_clave) && parentTender.campos_extraidos_json.requisitos_clave.length > 0
+      ? parentTender.campos_extraidos_json.requisitos_clave
+      : [
+          'Acreditación de existencia legal y personalidad jurídica del representante.',
+          'Opinión positiva de cumplimiento de obligaciones fiscales emitida por el SAT (Artículo 32-D).',
+          'Declaración de no encontrarse en los supuestos de inhabilitación ni impedimentos legales.',
+          'Garantía de sostenimiento de propuesta y póliza de fianza de cumplimiento.',
+          'Constancia de situación fiscal y registro patronal ante el IMSS.',
+        ];
+
+    reqs.forEach((r) => {
+      const col = document.createElement('div');
+      col.className = 'col-12 col-md-6';
+      col.innerHTML = `
+        <div class="requisito-card h-100 shadow-none">
+          <i class="bi bi-check-circle-fill text-success"></i>
+          <span>${escapeHtml(r)}</span>
+        </div>
+      `;
+      reqContainer.appendChild(col);
+    });
+  }
+
   // Setup In-Situ PDF Viewer Frame & Actions
-  function setupPdfViewer(attachedDocs, proc) {
-    const viewerCard = document.getElementById('detailPdfViewerCard');
+  function setupPdfViewer(attachedDocs, parentTender) {
     const viewerFrame = document.getElementById('detailPdfViewerFrame');
     const titleEl = document.getElementById('detailViewerDocTitle');
     const metaEl = document.getElementById('detailViewerDocMeta');
@@ -543,75 +567,111 @@
 
     if (!attachedDocs || attachedDocs.length === 0) {
       state.activeDocId = null;
-      if (titleEl) titleEl.textContent = 'Sin documento adjunto';
-      if (metaEl) metaEl.textContent = 'Este registro proviene de contenido web directo o aún no tiene PDF vinculado.';
-      if (viewerFrame) viewerFrame.src = 'about:blank';
-      if (newTabLink) newTabLink.href = '#';
-      if (downloadLink) downloadLink.href = '#';
+      if (titleEl) titleEl.textContent = parentTender.titulo || 'Expediente Web';
+      if (metaEl) metaEl.textContent = 'Este registro proviene de contenido web directo o aún no tiene PDF descargado.';
+      if (viewerFrame) {
+        // Mostrar enlace al portal web si no hay PDF
+        viewerFrame.src = parentTender.source_url || 'about:blank';
+      }
+      if (newTabLink) newTabLink.href = parentTender.source_url || '#';
+      if (downloadLink) downloadLink.href = parentTender.source_url || '#';
       return;
     }
 
-    // Pick first PDF or first doc
-    const pdfDoc = attachedDocs.find((d) => d.mime_type === 'application/pdf') || attachedDocs[0];
+    const pdfDoc = attachedDocs.find((d) => d.file_type === 'pdf') || attachedDocs[0];
     state.activeDocId = pdfDoc.id;
 
     const downloadUrl = `/api/tenders/documents/${pdfDoc.id}/download`;
 
-    if (titleEl) titleEl.textContent = pdfDoc.nombre_archivo || `Documento #${pdfDoc.id}`;
+    if (titleEl) titleEl.textContent = pdfDoc.file_name || `Documento #${pdfDoc.id}`;
     if (metaEl) {
-      const sizeKb = pdfDoc.tamano_bytes ? Math.round(pdfDoc.tamano_bytes / 1024) : 0;
+      const sizeKb = pdfDoc.file_size_bytes ? Math.round(pdfDoc.file_size_bytes / 1024) : 0;
       const ocrTag = pdfDoc.metodo_extraccion ? ` · Extracción: ${pdfDoc.metodo_extraccion}` : '';
-      metaEl.textContent = `${sizeKb > 0 ? sizeKb + ' KB' : 'PDF'} · ${pdfDoc.mime_type || 'application/pdf'}${ocrTag}`;
+      metaEl.textContent = `${sizeKb > 0 ? sizeKb + ' KB' : 'Documento'} · ${pdfDoc.file_type || 'pdf'}${ocrTag}`;
     }
 
-    if (viewerFrame) {
-      viewerFrame.src = downloadUrl;
-    }
-    if (newTabLink) {
-      newTabLink.href = downloadUrl;
-    }
-    if (downloadLink) {
-      downloadLink.href = downloadUrl;
-    }
+    if (viewerFrame) viewerFrame.src = downloadUrl;
+    if (newTabLink) newTabLink.href = downloadUrl;
+    if (downloadLink) downloadLink.href = downloadUrl;
   }
 
-  // Inspect Raw OCR Text (Modal)
+  // Inspect Raw OCR Text (Modal) - NUNCA falla si no hay PDF
   async function openRawOcrModal() {
-    if (!state.activeDocId) {
-      showAlert('No hay un documento PDF activo seleccionado para inspeccionar su texto OCR.', 'warning');
+    if (!state.activeProcedureId) {
+      showAlert('Selecciona una licitación para inspeccionar su texto extraído.', 'warning');
       return;
     }
 
     const preEl = document.getElementById('rawOcrTextPre');
     const metaEl = document.getElementById('rawOcrModalMeta');
 
-    if (preEl) preEl.textContent = 'Obteniendo transcripción OCR desde PostgreSQL...';
-    if (metaEl) metaEl.textContent = `Documento ID #${state.activeDocId}`;
+    if (preEl) preEl.textContent = 'Obteniendo transcripción OCR / Web desde PostgreSQL...';
+    if (metaEl) metaEl.textContent = `Procedimiento #${state.activeProcedureId}`;
 
     const modalEl = document.getElementById('rawOcrModal');
-    let modalInstance = null;
     if (window.bootstrap?.Modal) {
-      modalInstance = window.bootstrap.Modal.getOrCreateInstance(modalEl);
+      const modalInstance = window.bootstrap.Modal.getOrCreateInstance(modalEl);
       modalInstance.show();
     }
 
     try {
-      const res = await fetch(`/api/tenders/documents/${state.activeDocId}/raw-text`);
+      const res = await fetch(`/api/tenders/procedures/${state.activeProcedureId}/raw-text`);
       const data = await res.json();
 
       if (!data.ok) {
-        throw new Error(data.error || 'No se pudo obtener el texto OCR');
+        throw new Error(data.message || data.error || 'No se pudo obtener el texto');
       }
 
       const fullText = data.raw_text || '';
       if (preEl) {
-        preEl.textContent = fullText.length > 0 ? fullText : '(El documento no contiene texto extraído o se encuentra vacío).';
+        preEl.textContent = fullText.length > 0 ? fullText : '(El expediente se encuentra vacío).';
       }
       if (metaEl) {
-        metaEl.textContent = `${data.nombre_archivo} · Método: ${data.metodo_extraccion || 'N/A'} · ${data.caracteres_totales.toLocaleString()} caracteres extraídos`;
+        metaEl.textContent = `${data.nombre_archivo} · Fuente: ${data.metodo_extraccion || 'N/A'} · ${Number(data.caracteres_totales || fullText.length).toLocaleString()} caracteres extraídos`;
       }
     } catch (err) {
-      if (preEl) preEl.textContent = `Error al cargar texto OCR: ${err.message}`;
+      if (preEl) preEl.textContent = `Error al cargar texto: ${err.message}`;
+    }
+  }
+
+  // Extraer Cronograma de Fechas con Claude IA
+  async function extractTimelineWithIa() {
+    if (!state.activeProcedureId) {
+      showAlert('Selecciona una licitación primero.', 'warning');
+      return;
+    }
+
+    const btn = document.getElementById('btnExtractTimelineIa');
+    const origHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Analizando fechas...';
+    }
+
+    try {
+      showAlert('Analizando el documento con Claude para extraer todos los actos del cronograma...', 'info');
+      const res = await fetch(`/api/tenders/procedures/${state.activeProcedureId}/extract-timeline`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+
+      if (!data.ok) {
+        throw new Error(data.message || 'Error al extraer cronograma');
+      }
+
+      showAlert('¡Cronograma y requisitos extraídos y guardados con éxito!', 'success');
+
+      // Invalidar cache y refrescar
+      state.cachedProcedures.delete(state.activeProcedureId);
+      await selectProcedure(state.activeProcedureId);
+      await loadTendersTree(true);
+    } catch (err) {
+      showAlert(`Error en extracción de cronograma: ${err.message}`, 'danger');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
+      }
     }
   }
 
@@ -623,11 +683,11 @@
       const data = await res.json();
 
       if (data.ok) {
-        const diag = data.diagnostics;
-        const msg = `Diagnóstico OCR: Python 3: ${diag.python3_version} | Surya OCR: ${diag.surya_script_exists ? 'Instalado' : 'No encontrado'} | Tesseract: ${diag.tesseract_installed ? 'Presente' : 'No detectado'} | pypdfium2: ${diag.pypdfium2_installed ? 'Presente' : 'No detectado'}`;
+        const diag = data.diagnostics || data;
+        const msg = `Diagnóstico OCR: Python: ${diag.python_bin || 'Activo'} | Surya OCR: ${diag.surya_script_ready ? 'Instalado' : 'No encontrado'} | Tesseract: ${diag.tesseract_available ? 'Presente' : 'No detectado'}`;
         showAlert(msg, 'success');
       } else {
-        showAlert(`Diagnóstico OCR con advertencias: ${data.error || 'Fallo general'}`, 'warning');
+        showAlert(`Diagnóstico OCR: ${data.message || 'Fallo general'}`, 'warning');
       }
     } catch (err) {
       showAlert(`Error ejecutando diagnóstico: ${err.message}`, 'danger');
@@ -686,16 +746,14 @@
 
       const data = await res.json();
       if (!data.ok) {
-        throw new Error(data.error || 'Error al procesar la licitación');
+        throw new Error(data.message || data.error || 'Error al procesar la licitación');
       }
 
       showAlert(`¡Extracción completada con éxito! Licitación #${data.tender_id} agregada al catálogo.`, 'success');
 
-      // Clear cached procedures and reload tree
       state.cachedProcedures.clear();
       await loadTendersTree(false);
 
-      // Auto-select the newly ingested tender if procedures exist
       if (data.tender_id) {
         const matchingParent = state.treeData.find((p) => p.id === data.tender_id);
         if (matchingParent && matchingParent.procedures?.length > 0) {
@@ -770,6 +828,32 @@
 
     // Diagnostics Button
     document.getElementById('btnOcrDiagnostics')?.addEventListener('click', runOcrDiagnostics);
+
+    // Extract Timeline Button
+    document.getElementById('btnExtractTimelineIa')?.addEventListener('click', extractTimelineWithIa);
+    document.getElementById('btnReanalyzeProc')?.addEventListener('click', extractTimelineWithIa);
+
+    // Timeline View Switchers
+    const btnTimelineCards = document.getElementById('btnTimelineViewCards');
+    const btnTimelineTable = document.getElementById('btnTimelineViewTable');
+    const graphicWrapper = document.getElementById('timelineGraphicWrapper');
+    const tableWrapper = document.getElementById('detailTimelineTableWrapper');
+
+    btnTimelineCards?.addEventListener('click', () => {
+      state.activeTimelineView = 'cards';
+      btnTimelineCards.classList.add('active');
+      btnTimelineTable?.classList.remove('active');
+      graphicWrapper?.classList.remove('d-none');
+      tableWrapper?.classList.add('d-none');
+    });
+
+    btnTimelineTable?.addEventListener('click', () => {
+      state.activeTimelineView = 'table';
+      btnTimelineTable.classList.add('active');
+      btnTimelineCards?.classList.remove('active');
+      graphicWrapper?.classList.add('d-none');
+      tableWrapper?.classList.remove('d-none');
+    });
 
     // Scroll to PDF Viewer Card Button
     document.getElementById('btnToggleViewerCard')?.addEventListener('click', () => {

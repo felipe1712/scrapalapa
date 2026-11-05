@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { db } from '../../db/pool.js';
 import { tenderIngestionService } from './tender-ingestion.service.js';
 import { claudeService } from '../llm/claude.service.js';
-import { TaskNameSchema } from '../llm/llm.schemas.js';
+import { TaskNameSchema, TenderExtractionSchema, TenderExtraction } from '../llm/llm.schemas.js';
 import { authService } from '../auth/auth.service.js';
 
 export const tendersRouter = Router();
@@ -67,7 +67,11 @@ tendersRouter.get('/tree', async (req: Request, res: Response) => {
       if (!proceduresByTender.has(p.tender_id)) {
         proceduresByTender.set(p.tender_id, []);
       }
-      proceduresByTender.get(p.tender_id)!.push(p);
+      proceduresByTender.get(p.tender_id)!.push({
+        ...p,
+        titulo: p.titulo_objeto,
+        objeto: p.titulo_objeto,
+      });
     }
 
     let tree = tendersRes.rows.map((t) => {
@@ -76,17 +80,26 @@ tendersRouter.get('/tree', async (req: Request, res: Response) => {
           id: `virtual-${t.id}`,
           tender_id: t.id,
           numero_procedimiento: t.numero_expediente || `PROC-${t.id}`,
+          titulo: t.titulo || t.source_url,
+          objeto: t.titulo || t.source_url,
           titulo_objeto: t.titulo || t.source_url,
           entidad: t.entidad,
           alcance_periodo: '',
-          cronograma: [],
-          requisitos_clave: [],
+          cronograma: t.campos_extraidos_json?.cronograma_general || [],
+          requisitos_clave: t.campos_extraidos_json?.requisitos_clave || [],
           estado: 'vigente',
           proximo_evento_nombre: null,
           proximo_evento_fecha: t.fecha_limite ? String(t.fecha_limite).slice(0, 10) : null,
           created_at: t.created_at,
         },
       ];
+      // Si el procedimiento tiene título genérico, asignar título del tender padre
+      procs.forEach((p) => {
+        if (!p.titulo || p.titulo === 'Procedimiento sin título' || p.titulo === p.numero_procedimiento) {
+          p.titulo = t.titulo || p.numero_procedimiento;
+          p.titulo_objeto = p.titulo;
+        }
+      });
       return {
         ...t,
         procedures: procs,
@@ -177,6 +190,40 @@ tendersRouter.get('/procedures/:id', async (req: Request, res: Response) => {
       };
     }
 
+    // Si el cronograma está vacío pero tender tiene cronograma_general en campos_extraidos_json, recuperarlo
+    let effectiveCronograma = Array.isArray(proc.cronograma) && proc.cronograma.length > 0
+      ? proc.cronograma
+      : Array.isArray(tender.campos_extraidos_json?.cronograma_general)
+      ? tender.campos_extraidos_json.cronograma_general
+      : [];
+
+    // Si aún está vacío pero existe fecha límite principal, generar hito representativo
+    if (effectiveCronograma.length === 0 && tender.fecha_limite) {
+      effectiveCronograma = [
+        {
+          evento: 'Publicación de Convocatoria',
+          fecha: String(tender.created_at).slice(0, 10),
+          hora: '09:00 hrs',
+          lugar: 'Portal Oficial',
+          estado: 'completado',
+        },
+        {
+          evento: 'Límite de Presentación de Propuestas',
+          fecha: String(tender.fecha_limite).slice(0, 10),
+          hora: '10:00 hrs',
+          lugar: 'Vía electrónica / Oficina convocante',
+          estado: 'proximo',
+        },
+      ];
+    }
+
+    // Requisitos indispensables combinados
+    const effectiveRequisitos = Array.isArray(proc.requisitos_clave) && proc.requisitos_clave.length > 0
+      ? proc.requisitos_clave
+      : Array.isArray(tender.campos_extraidos_json?.requisitos_clave) && tender.campos_extraidos_json.requisitos_clave.length > 0
+      ? tender.campos_extraidos_json.requisitos_clave
+      : [];
+
     const docsRes = await db.query(
       `SELECT id, file_name, source_url, file_type, file_size_bytes, metodo_extraccion, paginas_procesadas, LENGTH(texto_extraido) AS caracteres_extraidos, created_at
        FROM tender_documents
@@ -185,9 +232,26 @@ tendersRouter.get('/procedures/:id', async (req: Request, res: Response) => {
       [tenderId]
     );
 
+    const titleReal = proc.titulo_objeto && proc.titulo_objeto !== 'Procedimiento sin título' && proc.titulo_objeto !== proc.numero_procedimiento
+      ? proc.titulo_objeto
+      : tender.titulo || proc.numero_procedimiento || 'Licitación Pública';
+
+    const enhancedProc = {
+      ...proc,
+      titulo: titleReal,
+      objeto: titleReal,
+      titulo_objeto: titleReal,
+      entidad: proc.entidad || tender.entidad || 'Entidad convocante no especificada',
+      cronograma: effectiveCronograma,
+      requisitos_clave: effectiveRequisitos,
+      sintesis_claude: proc.sintesis_claude || tender.sintesis_claude,
+      parent_tender: tender,
+      parent_documents: docsRes.rows,
+    };
+
     res.json({
       ok: true,
-      procedure: proc,
+      procedure: enhancedProc,
       tender,
       documents: docsRes.rows,
     });
@@ -196,6 +260,229 @@ tendersRouter.get('/procedures/:id', async (req: Request, res: Response) => {
       ok: false,
       message: err?.message || 'Error al obtener detalle del procedimiento.',
     });
+  }
+});
+
+/**
+ * GET /api/tenders/procedures/:id/raw-text
+ * Devuelve el texto íntegro leído por OCR o por Lightpanda DOM para auditoría.
+ * NUNCA falla si no hay PDF, hace fallback al texto de la página web.
+ */
+tendersRouter.get('/procedures/:id/raw-text', async (req: Request, res: Response) => {
+  const rawId = String(req.params.id || '');
+  const procId = Number(rawId);
+
+  try {
+    let tenderId = 0;
+    if (rawId.startsWith('virtual-') || Number.isNaN(procId)) {
+      tenderId = Number(rawId.replace('virtual-', ''));
+    } else {
+      const pRes = await db.query('SELECT tender_id FROM tender_procedures WHERE id = $1 LIMIT 1', [procId]);
+      if (pRes.rowCount && pRes.rowCount > 0) {
+        tenderId = pRes.rows[0].tender_id;
+      }
+    }
+
+    if (!tenderId) {
+      res.status(404).json({ ok: false, message: 'Procedimiento no encontrado.' });
+      return;
+    }
+
+    // 1. Intentar obtener el texto extraído del documento PDF/Word más representativo
+    const docRes = await db.query(
+      `SELECT id, file_name, file_type, metodo_extraccion, paginas_procesadas,
+              LENGTH(texto_extraido) AS caracteres, texto_extraido, created_at
+       FROM tender_documents
+       WHERE tender_id = $1 AND texto_extraido IS NOT NULL AND LENGTH(texto_extraido) > 0
+       ORDER BY LENGTH(texto_extraido) DESC LIMIT 1`,
+      [tenderId]
+    );
+
+    if (docRes.rowCount && docRes.rowCount > 0) {
+      const doc = docRes.rows[0];
+      res.json({
+        ok: true,
+        source_type: 'document_ocr',
+        nombre_archivo: doc.file_name,
+        metodo_extraccion: doc.metodo_extraccion || 'OCR Multimodal',
+        caracteres_totales: doc.caracteres || (doc.texto_extraido ? doc.texto_extraido.length : 0),
+        raw_text: doc.texto_extraido,
+      });
+      return;
+    }
+
+    // 2. Si no hay documentos o están vacíos, devolver el texto extraído directamente de la web por Lightpanda
+    const tenderRes = await db.query(
+      `SELECT id, titulo, source_url, contenido_pagina_texto, texto_documentos_ocr FROM tenders WHERE id = $1 LIMIT 1`,
+      [tenderId]
+    );
+
+    if (tenderRes.rowCount === 0) {
+      res.status(404).json({ ok: false, message: 'Licitación no encontrada.' });
+      return;
+    }
+
+    const t = tenderRes.rows[0];
+    const webText = t.texto_documentos_ocr || t.contenido_pagina_texto || '';
+
+    res.json({
+      ok: true,
+      source_type: 'web_page_dom',
+      nombre_archivo: t.titulo || t.source_url || 'Extracción directa del portal web (DOM)',
+      metodo_extraccion: 'Lightpanda Web DOM Extractor',
+      caracteres_totales: webText.length,
+      raw_text: webText.length > 0 ? webText : '(No se registró texto en este expediente)',
+    });
+  } catch (err: any) {
+    res.status(500).json({
+      ok: false,
+      message: err?.message || 'Error al obtener el texto del procedimiento.',
+    });
+  }
+});
+
+/**
+ * POST /api/tenders/procedures/:id/extract-timeline
+ * Analiza el texto del procedimiento con Claude para extraer y guardar el cronograma completo de actos.
+ */
+tendersRouter.post('/procedures/:id/extract-timeline', async (req: Request, res: Response) => {
+  const rawId = String(req.params.id || '');
+  const procId = Number(rawId);
+
+  try {
+    let tenderId = 0;
+    let procedureId = 0;
+
+    if (rawId.startsWith('virtual-') || Number.isNaN(procId)) {
+      tenderId = Number(rawId.replace('virtual-', ''));
+    } else {
+      const pRes = await db.query('SELECT id, tender_id FROM tender_procedures WHERE id = $1 LIMIT 1', [procId]);
+      if (pRes.rowCount && pRes.rowCount > 0) {
+        procedureId = pRes.rows[0].id;
+        tenderId = pRes.rows[0].tender_id;
+      }
+    }
+
+    const tenderRes = await db.query(
+      'SELECT id, titulo, source_url, contenido_pagina_texto, texto_documentos_ocr, sintesis_claude FROM tenders WHERE id = $1 LIMIT 1',
+      [tenderId]
+    );
+
+    if (tenderRes.rowCount === 0) {
+      res.status(404).json({ ok: false, message: 'Licitación no encontrada' });
+      return;
+    }
+
+    const t = tenderRes.rows[0];
+    const sourceText = [t.texto_documentos_ocr, t.contenido_pagina_texto, t.sintesis_claude]
+      .filter(Boolean)
+      .join('\n\n');
+
+    if (!sourceText || sourceText.length < 30) {
+      res.status(400).json({ ok: false, message: 'El documento no contiene texto suficiente para extraer fechas.' });
+      return;
+    }
+
+    const extractionPrompt =
+      `A partir del siguiente texto oficial de la licitación (${t.titulo || t.source_url}), extrae EXHAUSTIVAMENTE el calendario o cronograma de todos los trámites y actos legales del procedimiento (por ejemplo: Publicación de Convocatoria, Visita a Instalaciones, Junta de Aclaraciones, Presentación y Apertura de Proposiciones Técnicas y Económicas, Dictamen / Fallo, Firma de Contrato).\n` +
+      `Si alguna fecha no se indica explícitamente pero se menciona un plazo relativo (ej. '10 días posteriores al fallo'), anótalo en el campo 'hora' o 'lugar'.\n\n` +
+      sourceText;
+
+    const extractionRes = await claudeService.extractStructuredJson({
+      tarea: 'completar_campos',
+      userPrompt: extractionPrompt,
+      toolName: 'extraer_cronograma_fechas',
+      toolDescription: 'Extrae el cronograma detallado de fechas, trámites y requisitos indispensables.',
+      zodSchema: TenderExtractionSchema,
+      tenderId: `TND-${tenderId}`,
+      documentId: 'PROCEDURE-TIMELINE',
+    });
+
+    if (!extractionRes.ok || !extractionRes.data) {
+      throw new Error(extractionRes.fallbackReason || 'No se pudo estructurar el cronograma con IA.');
+    }
+
+    const data = extractionRes.data as TenderExtraction;
+    const cronoList = (data.procedimientos && data.procedimientos[0]?.cronograma?.length)
+      ? data.procedimientos[0].cronograma
+      : data.cronograma_general || [];
+
+    const reqsList = (data.procedimientos && data.procedimientos[0]?.requisitos_clave?.length)
+      ? data.procedimientos[0].requisitos_clave
+      : data.requisitos_clave || [];
+
+    const alcance = (data.procedimientos && data.procedimientos[0]?.alcance_periodo)
+      ? data.procedimientos[0].alcance_periodo
+      : '';
+
+    // Determinar próximo evento
+    let proximoNombre = null;
+    let proximoFecha = null;
+    if (cronoList.length > 0) {
+      const parsedDates = cronoList
+        .map((c: any) => ({
+          evento: c.evento,
+          parsed: new Date(c.fecha),
+        }))
+        .filter((c: any) => !isNaN(c.parsed.getTime()))
+        .sort((a: any, b: any) => a.parsed.getTime() - b.parsed.getTime());
+
+      const todayZero = new Date(new Date().setHours(0, 0, 0, 0));
+      const upcoming = parsedDates.find((c: any) => c.parsed >= todayZero);
+      if (upcoming) {
+        proximoNombre = upcoming.evento;
+        proximoFecha = upcoming.parsed.toISOString().slice(0, 10);
+      } else if (parsedDates.length > 0) {
+        proximoNombre = parsedDates[parsedDates.length - 1].evento;
+        proximoFecha = parsedDates[parsedDates.length - 1].parsed.toISOString().slice(0, 10);
+      }
+    }
+
+    if (procedureId > 0) {
+      await db.query(
+        `UPDATE tender_procedures SET
+          cronograma = $1::jsonb,
+          requisitos_clave = $2::jsonb,
+          alcance_periodo = COALESCE(NULLIF($3, ''), alcance_periodo),
+          proximo_evento_nombre = $4,
+          proximo_evento_fecha = $5,
+          updated_at = NOW()
+         WHERE id = $6`,
+        [
+          JSON.stringify(cronoList),
+          JSON.stringify(reqsList),
+          alcance,
+          proximoNombre,
+          proximoFecha,
+          procedureId,
+        ]
+      );
+    } else {
+      // Si era virtual, actualizar en tenders.campos_extraidos_json
+      await db.query(
+        `UPDATE tenders SET
+          campos_extraidos_json = jsonb_set(
+            COALESCE(campos_extraidos_json, '{}'::jsonb),
+            '{cronograma_general}',
+            $1::jsonb
+          ),
+          updated_at = NOW()
+         WHERE id = $2`,
+        [JSON.stringify(cronoList), tenderId]
+      );
+    }
+
+    res.json({
+      ok: true,
+      message: 'Cronograma y requisitos extraídos con éxito.',
+      cronograma: cronoList,
+      requisitos_clave: reqsList,
+      alcance_periodo: alcance,
+      proximo_evento_nombre: proximoNombre,
+      proximo_evento_fecha: proximoFecha,
+    });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, message: err?.message || 'Error al extraer cronograma con IA.' });
   }
 });
 
