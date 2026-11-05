@@ -138,16 +138,48 @@ export const UsageQuerySchema = z.object({
 export type UsageQueryInput = z.infer<typeof UsageQuerySchema>;
 
 /**
- * Esquema Zod de ejemplo para extracciones estructuradas en JSON (Tool Use)
+ * Hito o evento del cronograma de una licitación (Junta de Aclaraciones, Apertura, Fallo, etc.)
+ */
+export const TenderMilestoneSchema = z.object({
+  evento: z.string().describe('Nombre del acto o trámite (ej. Publicación de Convocatoria, Junta de Aclaraciones, Apertura de Proposiciones, Fallo, Firma de Contrato)'),
+  fecha: z.string().describe('Fecha del evento en formato YYYY-MM-DD o DD/MM/YYYY'),
+  hora: z.string().optional().default('').describe('Hora del evento (ej. 10:00 hrs)'),
+  lugar: z.string().optional().default('').describe('Lugar o modalidad de celebración (ej. Sala de Licitaciones, Remoto por CompraNet)'),
+  estado: z.enum(['completado', 'proximo', 'pendiente']).optional().default('proximo'),
+});
+
+export type TenderMilestone = z.infer<typeof TenderMilestoneSchema>;
+
+/**
+ * Procedimiento / Licitación individual identificada dentro de la convocatoria o documento
+ */
+export const TenderProcedureSchema = z.object({
+  numero_procedimiento: z.string().describe('Número o código oficial de la licitación (ej. PJCDMX/LPN-01/2026, LA-050GYR-E1-2026)'),
+  titulo_objeto: z.string().describe('Objeto o descripción clara de los bienes, suministros o servicios licitados'),
+  entidad_convocante: z.string().optional().default('').describe('Organismo o dependencia convocante'),
+  alcance_periodo: z.string().optional().default('').describe('Periodo de vigencia del contrato, volumen estimado de partidas o periodicidad del servicio'),
+  cronograma: z.array(TenderMilestoneSchema).optional().default([]).describe('Cronograma secuencial de fechas de los actos del procedimiento'),
+  requisitos_clave: z.array(z.string()).optional().default([]).describe('Requisitos técnicos, legales o financieros indispensables'),
+  resumen_ejecutivo: z.string().optional().default('').describe('Síntesis concisa de los aspectos más relevantes para el licitante'),
+});
+
+export type TenderProcedure = z.infer<typeof TenderProcedureSchema>;
+
+/**
+ * Esquema de extracción estructurada en JSON para documentos de licitación.
+ * Soporta convocatorias con múltiples licitaciones desglosadas (drill-down).
  */
 export const TenderExtractionSchema = z.object({
-  titulo_licitacion: z.string().describe('Título oficial u objeto principal de la licitación'),
-  entidad_convocante: z.string().describe('Organismo o dependencia que convoca'),
-  presupuesto_estimado: z.number().nullable().describe('Monto numérico del presupuesto base sin impuestos'),
-  moneda: z.string().default('MXN').describe('Código ISO de moneda (MXN, USD, EUR, etc.)'),
-  fecha_limite_propuestas: z.string().nullable().describe('Fecha límite de entrega en formato ISO YYYY-MM-DD'),
-  requisitos_clave: z.array(z.string()).describe('Lista de requisitos técnicos o legales obligatorios'),
-  nivel_riesgo: z.enum(['bajo', 'medio', 'alto']).describe('Evaluación preliminar de complejidad o riesgo'),
+  titulo_convocatoria: z.string().optional().describe('Título de la publicación, gaceta o documento general'),
+  titulo_licitacion: z.string().optional().describe('Título principal o primer procedimiento'),
+  entidad_convocante: z.string().describe('Organismo, dependencia o institución que convoca'),
+  procedimientos: z.array(TenderProcedureSchema).optional().default([]).describe('Lista de todos los procedimientos o licitaciones individuales contenidas en el documento'),
+  cronograma_general: z.array(TenderMilestoneSchema).optional().default([]).describe('Fechas y actos aplicables a la convocatoria'),
+  presupuesto_estimado: z.number().nullable().optional().describe('Monto numérico del presupuesto base o costo de bases si viene publicado'),
+  moneda: z.string().default('MXN').describe('Código ISO de moneda (MXN, USD, etc.)'),
+  fecha_limite_propuestas: z.string().nullable().optional().describe('Fecha límite principal de entrega'),
+  requisitos_clave: z.array(z.string()).optional().default([]).describe('Lista de requisitos generales'),
+  nivel_riesgo: z.enum(['bajo', 'medio', 'alto']).optional().default('medio'),
 });
 
 export type TenderExtraction = z.infer<typeof TenderExtractionSchema>;

@@ -55,18 +55,26 @@ export function normalizeForSearch(text: string): string {
 }
 
 /**
- * Convierte una cadena separada por comas (o arreglo) en lista limpia de palabras clave.
+ * Convierte una cadena separada por comas (o arreglo) en lista limpia de palabras clave,
+ * expandiendo automáticamente variantes con y sin acentos (ej. 'fumigación' -> ['fumigación', 'fumigacion']).
  */
 export function parseKeywordsList(raw?: string | string[]): string[] {
   if (!raw) return [];
   const list = Array.isArray(raw) ? raw : raw.split(',');
-  return Array.from(
-    new Set(
-      list
-        .map((k) => k.trim())
-        .filter((k) => k.length >= 2)
-    )
-  );
+  const set = new Set<string>();
+
+  for (const item of list) {
+    const trimmed = item.trim();
+    if (trimmed.length >= 2) {
+      set.add(trimmed);
+      const unaccented = normalizeForSearch(trimmed);
+      if (unaccented && unaccented.length >= 2) {
+        set.add(unaccented);
+      }
+    }
+  }
+
+  return Array.from(set);
 }
 
 /**

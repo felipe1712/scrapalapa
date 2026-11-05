@@ -359,15 +359,24 @@ export class TenderIngestionService {
 
       const keywordInstruction =
         keywordsList.length > 0
-          ? `\nIMPORTANTE: El usuario buscó específicamente las palabras clave: [${keywordsList.join(', ')}]. Prioriza las licitaciones y los documentos que hicieron "hit" con estas palabras clave.\n`
+          ? `\nIMPORTANTE: El usuario buscó las palabras clave: [${keywordsList.join(', ')}]. ` +
+            `Si el documento contiene varias licitaciones, asegúrate de desglosar CADA procedimiento en el arreglo "procedimientos", prestando especial atención a aquellos que coincidan con las palabras clave.\n`
           : '';
+
+      const extractionPrompt =
+        keywordInstruction +
+        `Analiza detalladamente la información de la convocatoria o bases de licitación.\n` +
+        `INSTRUCCIONES CLAVE:\n` +
+        `1. Si el documento contiene MÚLTIPLES licitaciones o procedimientos distintos (por ejemplo, LPN-01, LPN-02, etc.), desglosa CADA UNO individualmente en el arreglo "procedimientos". Si solo contiene una, incluye ese único procedimiento.\n` +
+        `2. Para cada procedimiento, extrae con la máxima fidelidad su número oficial, objeto del contrato, alcance o periodo de vigencia, requisitos técnicos/legales y su CRONOGRAMA COMPLETO de fechas de los actos (Publicación, Visita al sitio, Junta de Aclaraciones, Presentación y Apertura de Propuestas, Fallo y Firma de Contrato).\n\n` +
+        fullConsolidatedText;
 
       try {
         const extractionRes = await claudeService.extractStructuredJson({
           tarea: 'completar_campos',
-          userPrompt: keywordInstruction + fullConsolidatedText,
+          userPrompt: extractionPrompt,
           toolName: 'extraer_campos_licitacion',
-          toolDescription: 'Extrae los datos principales de la licitación a partir del contenido de la página y documentos OCR.',
+          toolDescription: 'Extrae los datos principales de la licitación y desglosa los procedimientos y cronogramas de fechas a partir del documento.',
           zodSchema: TenderExtractionSchema,
           tenderId: `TND-${tenderId}`,
           documentId: processedDocs[0]?.fileName || 'WEB-PAGE',
@@ -498,6 +507,70 @@ export class TenderIngestionService {
           tenderId,
         ]
       );
+
+      // Desglose y persistencia de sub-procedimientos individuales en tender_procedures
+      const rawProcedures = Array.isArray(structuredFields?.procedimientos) && structuredFields.procedimientos.length > 0
+        ? structuredFields.procedimientos
+        : [
+            {
+              numero_procedimiento: finalExpediente || `PROC-${tenderId}`,
+              titulo_objeto: finalTitle,
+              entidad_convocante: finalEntidad || '',
+              alcance_periodo: '',
+              cronograma: Array.isArray(structuredFields?.cronograma_general) ? structuredFields.cronograma_general : [],
+              requisitos_clave: Array.isArray(structuredFields?.requisitos_clave) ? structuredFields.requisitos_clave : [],
+              resumen_ejecutivo: claudeSynthesis || '',
+            },
+          ];
+
+      await db.query('DELETE FROM tender_procedures WHERE tender_id = $1', [tenderId]);
+
+      for (const proc of rawProcedures) {
+        let proximoNombre = null;
+        let proximoFecha = null;
+        const cronoList = Array.isArray(proc.cronograma) ? proc.cronograma : [];
+
+        if (cronoList.length > 0) {
+          const parsedDates = cronoList
+            .map((c: any) => ({
+              evento: c.evento,
+              parsed: new Date(c.fecha),
+            }))
+            .filter((c: any) => !isNaN(c.parsed.getTime()))
+            .sort((a: any, b: any) => a.parsed.getTime() - b.parsed.getTime());
+
+          const todayZero = new Date(new Date().setHours(0, 0, 0, 0));
+          const upcoming = parsedDates.find((c: any) => c.parsed >= todayZero);
+          if (upcoming) {
+            proximoNombre = upcoming.evento;
+            proximoFecha = upcoming.parsed.toISOString().slice(0, 10);
+          } else if (parsedDates.length > 0) {
+            proximoNombre = parsedDates[parsedDates.length - 1].evento;
+            proximoFecha = parsedDates[parsedDates.length - 1].parsed.toISOString().slice(0, 10);
+          }
+        }
+
+        await db.query(
+          `INSERT INTO tender_procedures (
+            tender_id, tenant_id, numero_procedimiento, titulo_objeto, entidad,
+            alcance_periodo, cronograma, requisitos_clave, sintesis_claude,
+            estado, proximo_evento_nombre, proximo_evento_fecha
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, 'vigente', $10, $11)`,
+          [
+            tenderId,
+            tenantId,
+            (proc.numero_procedimiento || finalExpediente || `PROC-${tenderId}`).slice(0, 175),
+            proc.titulo_objeto || finalTitle,
+            (proc.entidad_convocante || finalEntidad || '').slice(0, 245),
+            proc.alcance_periodo || '',
+            JSON.stringify(cronoList),
+            JSON.stringify(proc.requisitos_clave || []),
+            proc.resumen_ejecutivo || claudeSynthesis || '',
+            proximoNombre,
+            proximoFecha,
+          ]
+        );
+      }
 
       const updatedTender = await db.query('SELECT * FROM tenders WHERE id = $1', [tenderId]);
       const savedDocs = await db.query(
@@ -818,6 +891,67 @@ export class TenderIngestionService {
           tenderId,
         ]
       );
+
+      // Desglose de sub-procedimientos para correo
+      const rawProcedures = Array.isArray(structuredFields?.procedimientos) && structuredFields.procedimientos.length > 0
+        ? structuredFields.procedimientos
+        : [
+            {
+              numero_procedimiento: finalExpediente || `PROC-${tenderId}`,
+              titulo_objeto: finalTitle,
+              entidad_convocante: String(finalEntidad),
+              alcance_periodo: '',
+              cronograma: Array.isArray(structuredFields?.cronograma_general) ? structuredFields.cronograma_general : [],
+              requisitos_clave: Array.isArray(structuredFields?.requisitos_clave) ? structuredFields.requisitos_clave : [],
+              resumen_ejecutivo: claudeSynthesis || '',
+            },
+          ];
+
+      await db.query('DELETE FROM tender_procedures WHERE tender_id = $1', [tenderId]);
+
+      for (const proc of rawProcedures) {
+        let proximoNombre = null;
+        let proximoFecha = null;
+        const cronoList = Array.isArray(proc.cronograma) ? proc.cronograma : [];
+
+        if (cronoList.length > 0) {
+          const parsedDates = cronoList
+            .map((c: any) => ({ evento: c.evento, parsed: new Date(c.fecha) }))
+            .filter((c: any) => !isNaN(c.parsed.getTime()))
+            .sort((a: any, b: any) => a.parsed.getTime() - b.parsed.getTime());
+
+          const todayZero = new Date(new Date().setHours(0, 0, 0, 0));
+          const upcoming = parsedDates.find((c: any) => c.parsed >= todayZero);
+          if (upcoming) {
+            proximoNombre = upcoming.evento;
+            proximoFecha = upcoming.parsed.toISOString().slice(0, 10);
+          } else if (parsedDates.length > 0) {
+            proximoNombre = parsedDates[parsedDates.length - 1].evento;
+            proximoFecha = parsedDates[parsedDates.length - 1].parsed.toISOString().slice(0, 10);
+          }
+        }
+
+        await db.query(
+          `INSERT INTO tender_procedures (
+            tender_id, tenant_id, numero_procedimiento, titulo_objeto, entidad,
+            alcance_periodo, cronograma, requisitos_clave, sintesis_claude,
+            estado, proximo_evento_nombre, proximo_evento_fecha
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, 'vigente', $10, $11)`,
+          [
+            tenderId,
+            input.tenantId,
+            (proc.numero_procedimiento || finalExpediente || `PROC-${tenderId}`).slice(0, 175),
+            proc.titulo_objeto || finalTitle,
+            (proc.entidad_convocante || finalEntidad || '').slice(0, 245),
+            proc.alcance_periodo || '',
+            JSON.stringify(cronoList),
+            JSON.stringify(proc.requisitos_clave || []),
+            proc.resumen_ejecutivo || claudeSynthesis || '',
+            proximoNombre,
+            proximoFecha,
+          ]
+        );
+      }
 
       return {
         ok: true,
