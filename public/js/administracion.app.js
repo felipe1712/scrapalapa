@@ -12,6 +12,16 @@
     tenders: [],
   };
 
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
   const TAB_MAP = {
     '#clientes': '#pane-clientes',
     '#usuarios': '#pane-usuarios',
@@ -39,6 +49,10 @@
 
     if (updateUrl && window.location.hash !== hash) {
       history.replaceState(null, '', hash);
+    }
+
+    if (hash === '#licitaciones') {
+      loadAdminTenders();
     }
   }
 
