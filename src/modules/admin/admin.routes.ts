@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { Router } from 'express';
 import { z } from 'zod';
 import { db } from '../../db/pool.js';
@@ -674,5 +675,193 @@ adminRouter.get('/activity', async (req, res) => {
     });
   } catch (err: any) {
     res.status(500).json({ ok: false, message: err?.message || 'Error al consultar actividad.' });
+  }
+});
+
+/**
+ * GET /api/admin/tenders
+ * Lista todas las licitaciones registradas en base de datos con filtros avanzados y conteo de procedimientos/documentos.
+ */
+adminRouter.get('/tenders', async (req, res) => {
+  try {
+    const auth = req.auth!;
+    const filterTenantId = req.query.tenant_id ? Number(req.query.tenant_id) : null;
+    const filterEstado = req.query.estado ? String(req.query.estado).trim() : null;
+    const filterOrigen = req.query.origen ? String(req.query.origen).trim() : null;
+    const search = req.query.q ? String(req.query.q).trim().toLowerCase() : null;
+    const limit = Math.min(Number(req.query.limit || 200), 500);
+
+    const conditions: string[] = [];
+    const params: any[] = [];
+
+    // Control multitenant: los administradores de cliente solo ven sus propias licitaciones
+    if (auth.role !== 'superadmin') {
+      params.push(auth.activeTenantId);
+      conditions.push(`COALESCE(t.tenant_id, 1) = $${params.length}`);
+    } else if (filterTenantId) {
+      params.push(filterTenantId);
+      conditions.push(`COALESCE(t.tenant_id, 1) = $${params.length}`);
+    }
+
+    if (filterEstado) {
+      params.push(filterEstado);
+      conditions.push(`t.estado = $${params.length}`);
+    }
+
+    if (filterOrigen) {
+      params.push(filterOrigen);
+      conditions.push(`t.origen_tipo = $${params.length}`);
+    }
+
+    if (search) {
+      params.push(`%${search}%`);
+      const pIdx = params.length;
+      conditions.push(
+        `(LOWER(COALESCE(t.titulo, '')) LIKE $${pIdx} OR LOWER(COALESCE(t.entidad, '')) LIKE $${pIdx} OR LOWER(COALESCE(t.numero_expediente, '')) LIKE $${pIdx} OR LOWER(COALESCE(t.source_url, '')) LIKE $${pIdx})`
+      );
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const listQuery = `
+      SELECT
+        t.id,
+        t.titulo,
+        t.entidad,
+        t.numero_expediente,
+        t.source_url,
+        t.estado,
+        t.origen_tipo,
+        t.presupuesto_estimado,
+        t.moneda,
+        t.fecha_limite,
+        t.created_at,
+        t.updated_at,
+        t.tenant_id,
+        te.nombre_comercial AS tenant_nombre,
+        COALESCE(s.nombre, CASE WHEN t.origen_tipo = 'email' THEN '📧 ' || COALESCE(ea.nombre, 'Correo E') ELSE NULL END) AS source_nombre,
+        (SELECT COUNT(*)::int FROM tender_procedures p WHERE p.tender_id = t.id) AS total_procedimientos,
+        (SELECT COUNT(*)::int FROM tender_documents d WHERE d.tender_id = t.id) AS total_documentos
+      FROM tenders t
+      LEFT JOIN tenants te ON te.id = t.tenant_id
+      LEFT JOIN scraping_sources s ON s.id = t.source_id
+      LEFT JOIN email_accounts ea ON ea.id = t.email_account_id
+      ${whereClause}
+      ORDER BY t.created_at DESC
+      LIMIT ${limit}
+    `;
+
+    const result = await db.query(listQuery, params);
+
+    // Métricas rápidas
+    const metricsParams: any[] = [];
+    let metricsTenantClause = '';
+    if (auth.role !== 'superadmin') {
+      metricsParams.push(auth.activeTenantId);
+      metricsTenantClause = `WHERE COALESCE(t.tenant_id, 1) = $1`;
+    } else if (filterTenantId) {
+      metricsParams.push(filterTenantId);
+      metricsTenantClause = `WHERE COALESCE(t.tenant_id, 1) = $1`;
+    }
+
+    const metricsRes = await db.query(
+      `SELECT
+        COUNT(*)::int AS total_tenders,
+        COUNT(CASE WHEN estado = 'completado' THEN 1 END)::int AS completadas,
+        COUNT(CASE WHEN estado = 'error' THEN 1 END)::int AS con_error,
+        (SELECT COUNT(*)::int FROM tender_documents d JOIN tenders t ON t.id = d.tender_id ${metricsTenantClause}) AS total_documentos,
+        (SELECT COUNT(*)::int FROM tender_procedures p JOIN tenders t ON t.id = p.tender_id ${metricsTenantClause}) AS total_procedimientos
+       FROM tenders t
+       ${metricsTenantClause}`,
+      metricsParams
+    );
+
+    res.json({
+      ok: true,
+      tenders: result.rows,
+      metrics: metricsRes.rows[0] || {
+        total_tenders: result.rowCount,
+        completadas: 0,
+        con_error: 0,
+        total_documentos: 0,
+        total_procedimientos: 0,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, message: err?.message || 'Error al consultar licitaciones.' });
+  }
+});
+
+/**
+ * DELETE /api/admin/tenders/:id
+ * Borra permanentemente una licitación, sus procedimientos (tender_procedures),
+ * documentos (tender_documents), archivos físicos en disco y actualiza correos vinculados.
+ */
+adminRouter.delete('/tenders/:id', async (req, res) => {
+  const tenderId = Number(req.params.id);
+  if (Number.isNaN(tenderId)) {
+    res.status(400).json({ ok: false, message: 'ID de licitación inválido.' });
+    return;
+  }
+
+  try {
+    const auth = req.auth!;
+    const tenderRes = await db.query('SELECT * FROM tenders WHERE id = $1 LIMIT 1', [tenderId]);
+    if (tenderRes.rowCount === 0) {
+      res.status(404).json({ ok: false, message: 'Licitación no encontrada.' });
+      return;
+    }
+
+    const tender = tenderRes.rows[0];
+
+    // Permisos: Superadministrador o administrador del tenant dueño
+    if (auth.role !== 'superadmin' && Number(tender.tenant_id) !== Number(auth.activeTenantId)) {
+      res.status(403).json({ ok: false, message: 'No tienes permisos para eliminar esta licitación.' });
+      return;
+    }
+
+    // 1. Obtener y eliminar archivos físicos en disco
+    const docsRes = await db.query(
+      'SELECT id, file_name, local_path FROM tender_documents WHERE tender_id = $1',
+      [tenderId]
+    );
+
+    let deletedFilesCount = 0;
+    for (const doc of docsRes.rows) {
+      if (doc.local_path) {
+        try {
+          if (fs.existsSync(doc.local_path)) {
+            fs.unlinkSync(doc.local_path);
+            deletedFilesCount++;
+          }
+        } catch (fErr: any) {
+          console.warn(`[Admin] Aviso al eliminar archivo físico ${doc.local_path}:`, fErr?.message);
+        }
+      }
+    }
+
+    // 2. Eliminar registro en base de datos (ON DELETE CASCADE elimina tender_documents y tender_procedures)
+    await db.query('DELETE FROM tenders WHERE id = $1', [tenderId]);
+
+    // 3. Registrar auditoría
+    await authService.logActivity({
+      tenantId: tender.tenant_id || auth.activeTenantId,
+      userId: auth.userId,
+      userEmail: auth.email,
+      userNombre: auth.nombreCompleto,
+      userRole: auth.role,
+      accion: 'Eliminación completa de licitación',
+      modulo: 'Administración / Licitaciones',
+      detalle: `Eliminó permanentemente la licitación ID #${tenderId} ("${tender.titulo || tender.source_url}"). Documentos removidos: ${docsRes.rowCount} (${deletedFilesCount} archivos físicos).`,
+    });
+
+    res.json({
+      ok: true,
+      message: `Licitación ID #${tenderId} y todos sus registros asociados eliminados con éxito.`,
+      deleted_documents_count: docsRes.rowCount,
+      deleted_files_count: deletedFilesCount,
+    });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, message: err?.message || 'Error al eliminar la licitación.' });
   }
 });

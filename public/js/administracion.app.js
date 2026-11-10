@@ -9,11 +9,13 @@
     tenants: [],
     users: [],
     activityLogs: [],
+    tenders: [],
   };
 
   const TAB_MAP = {
     '#clientes': '#pane-clientes',
     '#usuarios': '#pane-usuarios',
+    '#licitaciones': '#pane-licitaciones',
     '#actividad': '#pane-actividad',
   };
 
@@ -73,6 +75,7 @@
     const userTenantSelect = document.getElementById('uTenantIdSelect');
     const filterUsersTenant = document.getElementById('filterUsersByTenant');
     const filterActTenant = document.getElementById('filterActivityByTenant');
+    const filterTendersTenant = document.getElementById('filterTendersTenant');
 
     if (userTenantSelect) {
       userTenantSelect.innerHTML = state.tenants
@@ -102,6 +105,13 @@
       filterActTenant.innerHTML = filterOpts;
       filterActTenant.value = prev;
       filterActTenant.classList.toggle('d-none', !isSuperAdmin);
+    }
+
+    if (filterTendersTenant) {
+      const prev = filterTendersTenant.value;
+      filterTendersTenant.innerHTML = filterOpts;
+      filterTendersTenant.value = prev;
+      filterTendersTenant.parentElement?.classList.toggle('d-none', !isSuperAdmin);
     }
   }
 
@@ -563,6 +573,196 @@
       .join('');
   }
 
+  // =========================================================================
+  // 4. GESTIÓN Y ELIMINACIÓN DE LICITACIONES EN BASE DE DATOS
+  // =========================================================================
+  let tendersSearchDebounce = null;
+
+  async function loadAdminTenders() {
+    try {
+      const search = document.getElementById('filterTendersSearch')?.value || '';
+      const tenantId = document.getElementById('filterTendersTenant')?.value || '';
+      const estado = document.getElementById('filterTendersEstado')?.value || '';
+      const origen = document.getElementById('filterTendersOrigen')?.value || '';
+
+      const params = new URLSearchParams();
+      if (search.trim()) params.set('q', search.trim());
+      if (tenantId) params.set('tenant_id', tenantId);
+      if (estado) params.set('estado', estado);
+      if (origen) params.set('origen', origen);
+
+      const res = await fetch(`/api/admin/tenders?${params.toString()}`);
+      const data = await res.json();
+      if (!data.ok) {
+        showFeedback(data.message || 'Error al cargar licitaciones.', 'danger');
+        return;
+      }
+
+      state.tenders = data.tenders || [];
+
+      // Actualizar tarjetas de métricas
+      if (data.metrics) {
+        const m = data.metrics;
+        const elTotal = document.getElementById('tendersMetricTotal');
+        const elComp = document.getElementById('tendersMetricCompletadas');
+        const elProcs = document.getElementById('tendersMetricProcs');
+        const elDocs = document.getElementById('tendersMetricDocs');
+
+        if (elTotal) elTotal.textContent = String(m.total_tenders || 0);
+        if (elComp) elComp.textContent = String(m.completadas || 0);
+        if (elProcs) elProcs.textContent = String(m.total_procedimientos || 0);
+        if (elDocs) elDocs.textContent = String(m.total_documentos || 0);
+      }
+
+      renderAdminTendersTable();
+    } catch (err) {
+      console.error('Error cargando licitaciones admin:', err);
+    }
+  }
+
+  function renderAdminTendersTable() {
+    const tbody = document.getElementById('adminTendersTableBody');
+    if (!tbody) return;
+
+    if (state.tenders.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="8" class="text-center text-secondary py-4">No se encontraron licitaciones con los filtros seleccionados.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = state.tenders
+      .map((t) => {
+        let origenBadge = '<span class="badge bg-light text-dark border"><i class="bi bi-globe2 me-1"></i>Web</span>';
+        if (t.origen_tipo === 'source') {
+          origenBadge = `<span class="badge bg-primary-subtle text-primary border" title="${escapeHtml(t.source_nombre || '')}"><i class="bi bi-broadcast me-1"></i>Fuente</span>`;
+        } else if (t.origen_tipo === 'email') {
+          origenBadge = `<span class="badge bg-warning-subtle text-warning-emphasis border" title="${escapeHtml(t.source_nombre || '')}"><i class="bi bi-envelope me-1"></i>Correo E</span>`;
+        }
+
+        let estadoBadge = '<span class="badge bg-secondary">Pendiente</span>';
+        if (t.estado === 'completado') {
+          estadoBadge = '<span class="badge bg-success">Completado</span>';
+        } else if (t.estado === 'error') {
+          estadoBadge = '<span class="badge bg-danger">Error</span>';
+        } else if (t.estado === 'procesando') {
+          estadoBadge = '<span class="badge bg-warning text-dark">Procesando</span>';
+        }
+
+        const expCode = t.numero_expediente || `ID-${t.id}`;
+        const dateStr = t.created_at ? new Date(t.created_at).toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-';
+
+        return `<tr>
+          <td>
+            <span class="badge bg-primary mb-1">#${t.id}</span>
+            <div class="small fw-semibold text-dark text-truncate" style="max-width: 140px;" title="${escapeHtml(expCode)}">${escapeHtml(expCode)}</div>
+          </td>
+          <td>
+            <div class="fw-bold text-dark text-truncate" style="max-width: 320px;" title="${escapeHtml(t.titulo || t.source_url)}">
+              ${escapeHtml(t.titulo || 'Sin título registrado')}
+            </div>
+            <div class="text-secondary small text-truncate" style="max-width: 320px;">
+              <i class="bi bi-building me-1"></i>${escapeHtml(t.entidad || 'Entidad no especificada')}
+            </div>
+            <div class="mt-1">
+              <a href="${escapeHtml(t.source_url || '#')}" target="_blank" class="small text-muted text-truncate d-inline-block align-bottom" style="max-width: 280px;">
+                <i class="bi bi-link-45deg me-1"></i>${escapeHtml(t.source_url || '-')}
+              </a>
+            </div>
+          </td>
+          <td>
+            <span class="badge bg-light text-dark border">${escapeHtml(t.tenant_nombre || `Cliente #${t.tenant_id || 1}`)}</span>
+          </td>
+          <td>${origenBadge}</td>
+          <td class="text-center text-nowrap">
+            <span class="badge bg-primary-subtle text-primary border me-1">${t.total_procedimientos || 0} procs</span>
+            <span class="badge bg-light text-secondary border">${t.total_documentos || 0} docs</span>
+          </td>
+          <td class="text-center">${estadoBadge}</td>
+          <td class="text-nowrap small text-secondary">${dateStr}</td>
+          <td class="text-end text-nowrap">
+            <a href="licitaciones.html#proc-${t.id}" class="btn btn-sm btn-outline-primary me-1" title="Abrir en Pipeline / Visor" target="_blank">
+              <i class="bi bi-box-arrow-up-right"></i>
+            </a>
+            <button type="button" class="btn btn-sm btn-outline-danger btn-delete-tender" data-id="${t.id}" data-title="${escapeHtml(t.titulo || t.source_url)}" data-exp="${escapeHtml(expCode)}" data-docs="${t.total_documentos}" data-procs="${t.total_procedimientos}" title="Eliminar licitación y todos sus archivos asociados">
+              <i class="bi bi-trash3"></i>
+            </button>
+          </td>
+        </tr>`;
+      })
+      .join('');
+
+    // Conectar eventos de eliminación
+    tbody.querySelectorAll('.btn-delete-tender').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const tid = btn.getAttribute('data-id');
+        const title = btn.getAttribute('data-title');
+        const exp = btn.getAttribute('data-exp');
+        const docs = btn.getAttribute('data-docs');
+        const procs = btn.getAttribute('data-procs');
+        openDeleteTenderModal(tid, title, exp, docs, procs);
+      });
+    });
+  }
+
+  function openDeleteTenderModal(tenderId, title, exp, docs, procs) {
+    const inputId = document.getElementById('deleteTenderId');
+    const nameEl = document.getElementById('deleteTenderName');
+    const infoEl = document.getElementById('deleteTenderInfo');
+
+    if (inputId) inputId.value = tenderId;
+    if (nameEl) nameEl.textContent = `Licitación #${tenderId}: ${title || 'Sin título'}`;
+    if (infoEl) infoEl.textContent = `Expediente: ${exp || '-'} | Sub-procedimientos: ${procs || 0} | Archivos / Documentos: ${docs || 0}`;
+
+    const modalEl = document.getElementById('deleteTenderConfirmModal');
+    if (window.bootstrap?.Modal) {
+      window.bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    }
+  }
+
+  async function handleConfirmDeleteTender() {
+    const inputId = document.getElementById('deleteTenderId');
+    const tenderId = inputId?.value;
+    if (!tenderId) return;
+
+    const btn = document.getElementById('btnConfirmDeleteTender');
+    const originalHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Eliminando registros y archivos...';
+    }
+
+    try {
+      const res = await fetch(`/api/admin/tenders/${tenderId}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+
+      if (!data.ok) {
+        showFeedback(data.message || 'Error al eliminar la licitación.', 'danger');
+        return;
+      }
+
+      // Cerrar modal
+      const modalEl = document.getElementById('deleteTenderConfirmModal');
+      if (window.bootstrap?.Modal) {
+        window.bootstrap.Modal.getInstance(modalEl)?.hide();
+      }
+
+      showFeedback(`¡Licitación #${tenderId} y todos sus registros y archivos vinculados han sido eliminados de la base de datos!`, 'success');
+
+      // Recargar tabla de licitaciones, clientes y bitácora
+      await loadAdminTenders();
+      await loadTenants();
+      await loadActivity();
+    } catch (err) {
+      showFeedback(`Error al procesar la eliminación: ${err.message}`, 'danger');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+      }
+    }
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('#adminTabs .nav-link').forEach((link) => {
       link.addEventListener('click', (e) => {
@@ -592,11 +792,25 @@
     document.getElementById('filterActivityByTenant')?.addEventListener('change', loadActivity);
     document.getElementById('filterActivityByUser')?.addEventListener('change', loadActivity);
 
+    // Eventos de Pestaña Licitaciones
+    document.getElementById('btnRefreshAdminTenders')?.addEventListener('click', loadAdminTenders);
+    document.getElementById('filterTendersTenant')?.addEventListener('change', loadAdminTenders);
+    document.getElementById('filterTendersEstado')?.addEventListener('change', loadAdminTenders);
+    document.getElementById('filterTendersOrigen')?.addEventListener('change', loadAdminTenders);
+    document.getElementById('filterTendersSearch')?.addEventListener('input', (e) => {
+      clearTimeout(tendersSearchDebounce);
+      tendersSearchDebounce = setTimeout(() => {
+        loadAdminTenders();
+      }, 300);
+    });
+    document.getElementById('btnConfirmDeleteTender')?.addEventListener('click', handleConfirmDeleteTender);
+
     window.addEventListener('scrapper:session-ready', (ev) => {
       state.session = ev.detail?.session || null;
       loadTenants();
       loadUsers();
       loadActivity();
+      loadAdminTenders();
     });
 
     if (window.ScrapperSession?.session) {
@@ -604,10 +818,12 @@
       loadTenants();
       loadUsers();
       loadActivity();
+      loadAdminTenders();
     } else {
       loadTenants();
       loadUsers();
       loadActivity();
+      loadAdminTenders();
     }
   });
 })();

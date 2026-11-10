@@ -166,6 +166,11 @@
                     </a>
                 </li>
                 <li class="nav-item" role="presentation">
+                    <a class="nav-link" href="#licitaciones" data-target="#pane-licitaciones" role="tab">
+                        <i class="bi bi-file-earmark-ruled me-1"></i> Licitaciones
+                    </a>
+                </li>
+                <li class="nav-item" role="presentation">
                     <a class="nav-link" href="#actividad" data-target="#pane-actividad" role="tab">
                         <i class="bi bi-activity me-1"></i> Actividad de Usuarios
                     </a>
@@ -525,9 +530,182 @@
                     </div>
                 </div>
 
-            </div>
+                <!-- ===================================================================== -->
+                <!-- PESTAÑA 4: GESTIÓN Y ELIMINACIÓN DE LICITACIONES EN BASE DE DATOS    -->
+                <!-- ===================================================================== -->
+                <div class="tab-pane fade" id="pane-licitaciones" role="tabpanel">
+                    <!-- Tarjetas de Métricas Rápidas -->
+                    <div class="row g-3 mb-4">
+                        <div class="col-12 col-sm-6 col-xl-3">
+                            <div class="card border-0 shadow-sm">
+                                <div class="card-body p-3">
+                                    <div class="d-flex align-items-center">
+                                        <div class="avatar avatar-40 rounded-circle bg-light-theme text-theme me-3">
+                                            <i class="bi bi-file-earmark-ruled fs-5"></i>
+                                        </div>
+                                        <div>
+                                            <span class="small text-secondary d-block">Total en Base de Datos</span>
+                                            <h5 class="mb-0 fw-bold text-dark" id="tendersMetricTotal">0</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-12 col-sm-6 col-xl-3">
+                            <div class="card border-0 shadow-sm">
+                                <div class="card-body p-3">
+                                    <div class="d-flex align-items-center">
+                                        <div class="avatar avatar-40 rounded-circle bg-light-theme text-theme me-3">
+                                            <i class="bi bi-check2-circle fs-5"></i>
+                                        </div>
+                                        <div>
+                                            <span class="small text-secondary d-block">Completadas / Vigentes</span>
+                                            <h5 class="mb-0 fw-bold text-success" id="tendersMetricCompletadas">0</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-12 col-sm-6 col-xl-3">
+                            <div class="card border-0 shadow-sm">
+                                <div class="card-body p-3">
+                                    <div class="d-flex align-items-center">
+                                        <div class="avatar avatar-40 rounded-circle bg-light-theme text-theme me-3">
+                                            <i class="bi bi-diagram-3 fs-5"></i>
+                                        </div>
+                                        <div>
+                                            <span class="small text-secondary d-block">Sub-Procedimientos Hijos</span>
+                                            <h5 class="mb-0 fw-bold text-primary" id="tendersMetricProcs">0</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-12 col-sm-6 col-xl-3">
+                            <div class="card border-0 shadow-sm">
+                                <div class="card-body p-3">
+                                    <div class="d-flex align-items-center">
+                                        <div class="avatar avatar-40 rounded-circle bg-light-theme text-theme me-3">
+                                            <i class="bi bi-file-earmark-pdf fs-5"></i>
+                                        </div>
+                                        <div>
+                                            <span class="small text-secondary d-block">Documentos / Anexos</span>
+                                            <h5 class="mb-0 fw-bold text-dark" id="tendersMetricDocs">0</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tabla de Licitaciones -->
+                    <div class="card border-0 shadow-sm mb-4">
+                        <div class="card-header bg-none border-0 pt-3 pb-2">
+                            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                                <div>
+                                    <h6 class="title mb-0"><i class="bi bi-database-check text-primary me-2"></i>Catálogo de Licitaciones Registradas</h6>
+                                    <p class="small text-secondary mb-0">Revisa expedientes procesados, orígenes, estados y elimina registros con todos sus archivos asociados.</p>
+                                </div>
+                                <div class="d-flex align-items-center gap-2">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btnRefreshAdminTenders">
+                                        <i class="bi bi-arrow-clockwise me-1"></i> Actualizar
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Barra de Filtros -->
+                            <div class="row g-2 align-items-center">
+                                <div class="col-12 col-md-4">
+                                    <div class="input-group input-group-sm">
+                                        <span class="input-group-text bg-white text-secondary"><i class="bi bi-search"></i></span>
+                                        <input type="search" id="filterTendersSearch" class="form-control" placeholder="Buscar por título, entidad, expediente o URL..." />
+                                    </div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <select id="filterTendersTenant" class="form-select form-select-sm">
+                                        <option value="">Todos los clientes</option>
+                                    </select>
+                                </div>
+                                <div class="col-6 col-md-2">
+                                    <select id="filterTendersEstado" class="form-select form-select-sm">
+                                        <option value="">Todos los estados</option>
+                                        <option value="completado">Completado</option>
+                                        <option value="error">Error</option>
+                                        <option value="procesando">Procesando</option>
+                                    </select>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <select id="filterTendersOrigen" class="form-select form-select-sm">
+                                        <option value="">Todos los orígenes</option>
+                                        <option value="url">🌐 Extracción por URL</option>
+                                        <option value="source">🛰️ Fuente Automática</option>
+                                        <option value="email">📧 Correo Electrónico</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-hover align-middle small mb-0" id="adminTendersTable">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>ID / Exp</th>
+                                            <th>Licitación &amp; Convocante</th>
+                                            <th>Cliente</th>
+                                            <th>Origen</th>
+                                            <th class="text-center">Procs / Docs</th>
+                                            <th class="text-center">Estado</th>
+                                            <th>Fecha Registro</th>
+                                            <th class="text-end">Acciones</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="adminTendersTableBody">
+                                        <tr>
+                                            <td colspan="8" class="text-center text-secondary py-4">Cargando licitaciones...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
         </div>
     </main>
+
+    <!-- Modal de Confirmación de Eliminación Completa de Licitación -->
+    <div class="modal fade" id="deleteTenderConfirmModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header border-0 bg-danger text-white">
+                    <h6 class="modal-title fw-bold" id="deleteTenderModalTitle">
+                        <i class="bi bi-trash3-fill me-2"></i>Eliminar Licitación Definitivamente
+                    </h6>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <input type="hidden" id="deleteTenderId" value="" />
+                    <p class="text-dark mb-2">
+                        ¿Estás seguro de que deseas eliminar permanentemente la siguiente licitación?
+                    </p>
+                    <div class="p-3 mb-3 bg-light rounded border">
+                        <div class="fw-bold text-dark mb-1" id="deleteTenderName">-</div>
+                        <div class="small text-secondary" id="deleteTenderInfo">-</div>
+                    </div>
+                    <div class="alert alert-warning border-0 small mb-0">
+                        <i class="bi bi-exclamation-triangle-fill text-warning me-1"></i>
+                        <strong>Atención:</strong> Esta acción borrará de forma irreversible el expediente, sus <strong>sub-procedimientos</strong> (<code class="text-dark">tender_procedures</code>), cronogramas, <strong>documentos y archivos físicos en disco</strong> (<code class="text-dark">tender_documents</code>) y análisis de Claude vinculados.
+                    </div>
+                </div>
+                <div class="modal-footer border-0 bg-light">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-sm btn-danger px-3" id="btnConfirmDeleteTender">
+                        <i class="bi bi-trash3 me-1"></i> Sí, Eliminar Todo
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Footer -->
     <footer class="footer mt-auto">
