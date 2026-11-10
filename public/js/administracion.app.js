@@ -696,7 +696,7 @@
             <a href="licitaciones.html#proc-${t.id}" class="btn btn-sm btn-outline-primary me-1" title="Abrir en Pipeline / Visor" target="_blank">
               <i class="bi bi-box-arrow-up-right"></i>
             </a>
-            <button type="button" class="btn btn-sm btn-outline-danger btn-delete-tender" data-id="${t.id}" data-title="${escapeHtml(t.titulo || t.source_url)}" data-exp="${escapeHtml(expCode)}" data-docs="${t.total_documentos}" data-procs="${t.total_procedimientos}" title="Eliminar licitación y todos sus archivos asociados">
+            <button type="button" class="btn btn-sm btn-outline-danger btn-delete-tender" data-id="${t.id}" data-title="${escapeHtml(t.titulo || t.source_url)}" data-exp="${escapeHtml(expCode)}" data-docs="${t.total_documentos || 0}" data-procs="${t.total_procedimientos || 0}" data-bs-toggle="modal" data-bs-target="#deleteTenderConfirmModal" data-toggle="modal" data-target="#deleteTenderConfirmModal" title="Eliminar licitación y todos sus archivos asociados">
               <i class="bi bi-trash3"></i>
             </button>
           </td>
@@ -704,9 +704,9 @@
       })
       .join('');
 
-    // Conectar eventos de eliminación
+    // Conectar eventos directos de eliminación
     tbody.querySelectorAll('.btn-delete-tender').forEach((btn) => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', (e) => {
         const tid = btn.getAttribute('data-id');
         const title = btn.getAttribute('data-title');
         const exp = btn.getAttribute('data-exp');
@@ -717,7 +717,7 @@
     });
   }
 
-  function openDeleteTenderModal(tenderId, title, exp, docs, procs) {
+  function setDeleteModalFields(tenderId, title, exp, docs, procs) {
     const inputId = document.getElementById('deleteTenderId');
     const nameEl = document.getElementById('deleteTenderName');
     const infoEl = document.getElementById('deleteTenderInfo');
@@ -725,16 +725,49 @@
     if (inputId) inputId.value = tenderId;
     if (nameEl) nameEl.textContent = `Licitación #${tenderId}: ${title || 'Sin título'}`;
     if (infoEl) infoEl.textContent = `Expediente: ${exp || '-'} | Sub-procedimientos: ${procs || 0} | Archivos / Documentos: ${docs || 0}`;
+  }
+
+  function openDeleteTenderModal(tenderId, title, exp, docs, procs) {
+    setDeleteModalFields(tenderId, title, exp, docs, procs);
 
     const modalEl = document.getElementById('deleteTenderConfirmModal');
-    if (window.bootstrap?.Modal) {
-      window.bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    let modalShown = false;
+
+    // 1. Intentar con Bootstrap 5 JS API
+    if (window.bootstrap?.Modal && modalEl) {
+      try {
+        const modalInstance = window.bootstrap.Modal.getOrCreateInstance(modalEl);
+        modalInstance.show();
+        modalShown = true;
+      } catch (err) {
+        console.warn('Aviso: bootstrap.Modal falló:', err);
+      }
+    }
+
+    // 2. Intentar con jQuery Bootstrap plugin
+    if (!modalShown && window.$ && modalEl && typeof window.$(modalEl).modal === 'function') {
+      try {
+        window.$(modalEl).modal('show');
+        modalShown = true;
+      } catch (err) {
+        console.warn('Aviso: jQuery modal falló:', err);
+      }
+    }
+
+    // 3. Fallback directo nativo: si por librerías JS no abrió el modal visual,
+    // mostrar confirm() nativo del navegador inmediatamente para nunca dejar bloqueado al usuario
+    if (!modalShown) {
+      const confirmDelete = window.confirm(
+        `¿Confirmas la eliminación permanente de la licitación #${tenderId} (${title || 'Sin título'})?\n\n` +
+        `Esta acción borrará irreversiblemente el expediente, sus sub-procedimientos, cronogramas y todos sus documentos físicos de la base de datos.`
+      );
+      if (confirmDelete) {
+        executeDeleteTender(tenderId);
+      }
     }
   }
 
-  async function handleConfirmDeleteTender() {
-    const inputId = document.getElementById('deleteTenderId');
-    const tenderId = inputId?.value;
+  async function executeDeleteTender(tenderId) {
     if (!tenderId) return;
 
     const btn = document.getElementById('btnConfirmDeleteTender');
@@ -755,10 +788,17 @@
         return;
       }
 
-      // Cerrar modal
+      // Cerrar modal si estuviera abierto
       const modalEl = document.getElementById('deleteTenderConfirmModal');
-      if (window.bootstrap?.Modal) {
-        window.bootstrap.Modal.getInstance(modalEl)?.hide();
+      if (window.bootstrap?.Modal && modalEl) {
+        try {
+          window.bootstrap.Modal.getInstance(modalEl)?.hide();
+        } catch {}
+      }
+      if (window.$ && modalEl && typeof window.$(modalEl).modal === 'function') {
+        try {
+          window.$(modalEl).modal('hide');
+        } catch {}
       }
 
       showFeedback(`¡Licitación #${tenderId} y todos sus registros y archivos vinculados han sido eliminados de la base de datos!`, 'success');
@@ -775,6 +815,13 @@
         btn.innerHTML = originalHtml;
       }
     }
+  }
+
+  async function handleConfirmDeleteTender() {
+    const inputId = document.getElementById('deleteTenderId');
+    const tenderId = inputId?.value;
+    if (!tenderId) return;
+    await executeDeleteTender(tenderId);
   }
 
   document.addEventListener('DOMContentLoaded', () => {
@@ -818,6 +865,36 @@
       }, 300);
     });
     document.getElementById('btnConfirmDeleteTender')?.addEventListener('click', handleConfirmDeleteTender);
+
+    // Listener nativo de Bootstrap 5 para sincronizar campos si el modal se abre vía data-bs-toggle
+    const deleteModalEl = document.getElementById('deleteTenderConfirmModal');
+    if (deleteModalEl) {
+      deleteModalEl.addEventListener('show.bs.modal', (event) => {
+        const button = event.relatedTarget;
+        if (!button) return;
+        const tid = button.getAttribute('data-id');
+        const title = button.getAttribute('data-title');
+        const exp = button.getAttribute('data-exp');
+        const docs = button.getAttribute('data-docs');
+        const procs = button.getAttribute('data-procs');
+        if (tid) {
+          setDeleteModalFields(tid, title, exp, docs, procs);
+        }
+      });
+    }
+
+    // Delegación de clics sobre el cuerpo de la tabla para atrapar clics en botones o sus íconos
+    document.getElementById('adminTendersTableBody')?.addEventListener('click', (e) => {
+      const btn = e.target.closest('.btn-delete-tender');
+      if (btn) {
+        const tid = btn.getAttribute('data-id');
+        const title = btn.getAttribute('data-title');
+        const exp = btn.getAttribute('data-exp');
+        const docs = btn.getAttribute('data-docs');
+        const procs = btn.getAttribute('data-procs');
+        openDeleteTenderModal(tid, title, exp, docs, procs);
+      }
+    });
 
     window.addEventListener('scrapper:session-ready', (ev) => {
       state.session = ev.detail?.session || null;
