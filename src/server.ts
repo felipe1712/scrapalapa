@@ -87,6 +87,14 @@ export async function createServerApp() {
   // Rutas de administración y monitoreo automático de Fuentes de Interés (/api/sources/*)
   app.use('/api/sources', sourcesRouter);
 
+  // Cualquier ruta /api/* no encontrada debe responder JSON 404 (no HTML)
+  app.use('/api', (req, res) => {
+    res.status(404).json({
+      ok: false,
+      message: `Endpoint de API no encontrado: ${req.method} ${req.originalUrl}`,
+    });
+  });
+
   // Redirección raíz
   app.get('/', (_req, res) => {
     res.redirect('/licitaciones.html');

@@ -30,6 +30,25 @@
     return text.toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   }
 
+  // Helper: Safe JSON parser that gives clear messages when server/proxy returns HTML (404, 502, 504, login redirect)
+  async function safeParseJson(res) {
+    const rawText = await res.text();
+    try {
+      return JSON.parse(rawText);
+    } catch {
+      if (res.status === 504 || res.status === 502) {
+        throw new Error(
+          `Tiempo de espera agotado en el proxy/servidor (HTTP ${res.status}). El sitio consultado está tardando mucho en responder o sigue procesando en segundo plano.`
+        );
+      }
+      if (res.status === 401 || res.status === 403 || rawText.includes('login.html')) {
+        throw new Error('Tu sesión expiró. Recarga la página e inicia sesión nuevamente.');
+      }
+      const cleanSnippet = rawText.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 140);
+      throw new Error(`El servidor devolvió una respuesta no JSON (HTTP ${res.status}): ${cleanSnippet}`);
+    }
+  }
+
   // Helper: Format Date
   function formatDate(val) {
     if (!val) return 'Por definir';
@@ -351,7 +370,7 @@
       let proc = state.cachedProcedures.get(procedureId);
       if (!proc) {
         const res = await fetch(`/api/tenders/procedures/${procedureId}`);
-        const data = await res.json();
+        const data = await safeParseJson(res);
         if (!data.ok || !data.procedure) {
           throw new Error(data.error || 'No se pudo cargar el detalle del procedimiento');
         }
@@ -616,7 +635,7 @@
 
     try {
       const res = await fetch(`/api/tenders/procedures/${state.activeProcedureId}/raw-text`);
-      const data = await res.json();
+      const data = await safeParseJson(res);
 
       if (!data.ok) {
         throw new Error(data.message || data.error || 'No se pudo obtener el texto');
@@ -653,7 +672,7 @@
       const res = await fetch(`/api/tenders/procedures/${state.activeProcedureId}/extract-timeline`, {
         method: 'POST',
       });
-      const data = await res.json();
+      const data = await safeParseJson(res);
 
       if (!data.ok) {
         throw new Error(data.message || 'Error al extraer cronograma');
@@ -680,7 +699,7 @@
     try {
       showAlert('Ejecutando diagnóstico de Surya OCR y dependencias...', 'info');
       const res = await fetch('/api/tenders/ocr/diagnostics');
-      const data = await res.json();
+      const data = await safeParseJson(res);
 
       if (data.ok) {
         const diag = data.diagnostics || data;
@@ -708,10 +727,15 @@
     const loginUrlInput = document.getElementById('authLoginUrlInput');
     const submitBtn = document.getElementById('btnIngestUrl');
 
-    const targetUrl = urlInput?.value.trim();
+    let targetUrl = urlInput?.value.trim() || '';
     if (!targetUrl) {
       showAlert('Por favor ingresa una URL válida.', 'warning');
       return;
+    }
+
+    if (!/^https?:\/\//i.test(targetUrl)) {
+      targetUrl = 'https://' + targetUrl;
+      if (urlInput) urlInput.value = targetUrl;
     }
 
     state.isIngesting = true;
@@ -726,36 +750,40 @@
 
       const payload = {
         url: targetUrl,
-        keywords: kwInput?.value.trim() || undefined,
+        keywords: kwInput?.value.trim() || '',
         process_attachments: processAttachSwitch ? processAttachSwitch.checked : true,
       };
 
       if (reqAuthSwitch && reqAuthSwitch.checked && userInput?.value) {
-        payload.credentials = {
-          username: userInput.value.trim(),
-          password: passInput?.value || '',
-          login_url: loginUrlInput?.value.trim() || undefined,
-        };
+        payload.auth_username = userInput.value.trim();
+        payload.auth_password = passInput?.value || '';
+        payload.auth_login_url = loginUrlInput?.value.trim() || undefined;
       }
 
-      const res = await fetch('/api/tenders/ingest', {
+      const res = await fetch('/api/tenders/ingest-url', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
+      const data = await safeParseJson(res);
       if (!data.ok) {
         throw new Error(data.message || data.error || 'Error al procesar la licitación');
       }
 
-      showAlert(`¡Extracción completada con éxito! Licitación #${data.tender_id} agregada al catálogo.`, 'success');
+      const createdTenderId = data.tender_id || data.tender?.id;
+      showAlert(
+        createdTenderId
+          ? `¡Extracción completada con éxito! Licitación #${createdTenderId} agregada al catálogo.`
+          : '¡Extracción completada con éxito!',
+        'success'
+      );
 
       state.cachedProcedures.clear();
       await loadTendersTree(false);
 
-      if (data.tender_id) {
-        const matchingParent = state.treeData.find((p) => p.id === data.tender_id);
+      if (createdTenderId) {
+        const matchingParent = state.treeData.find((p) => p.id === createdTenderId);
         if (matchingParent && matchingParent.procedures?.length > 0) {
           selectProcedure(matchingParent.procedures[0].id);
         }

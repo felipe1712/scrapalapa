@@ -19,6 +19,13 @@ const IngestUrlSchema = z.object({
   auth_username: z.string().trim().optional(),
   auth_password: z.string().optional(),
   auth_login_url: z.string().trim().optional(),
+  credentials: z
+    .object({
+      username: z.string().trim().optional(),
+      password: z.string().optional(),
+      login_url: z.string().trim().optional(),
+    })
+    .optional(),
 });
 
 /**
@@ -698,10 +705,10 @@ tendersRouter.get('/:id', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /api/tenders/ingest-url
+ * POST /api/tenders/ingest-url (y alias /api/tenders/ingest)
  * Ejecuta el pipeline de ingesta desde el formulario manual.
  */
-tendersRouter.post('/ingest-url', async (req: Request, res: Response) => {
+tendersRouter.post(['/ingest-url', '/ingest'], async (req: Request, res: Response) => {
   const parsed = IngestUrlSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({
@@ -720,9 +727,9 @@ tendersRouter.post('/ingest-url', async (req: Request, res: Response) => {
       ocrMode: d.ocr_mode,
       processAttachments: d.process_attachments,
       maxAttachments: d.max_attachments,
-      authUsername: d.auth_username,
-      authPassword: d.auth_password,
-      authLoginUrl: d.auth_login_url,
+      authUsername: d.auth_username || d.credentials?.username,
+      authPassword: d.auth_password || d.credentials?.password,
+      authLoginUrl: d.auth_login_url || d.credentials?.login_url,
       skipIfDuplicate: false,
       tenantId,
       origenTipo: 'url',
@@ -741,7 +748,11 @@ tendersRouter.post('/ingest-url', async (req: Request, res: Response) => {
       });
     }
 
-    res.json(result);
+    const tenderId = (result as any)?.tender?.id || (result as any)?.existingTenderId || null;
+    res.json({
+      ...result,
+      tender_id: tenderId,
+    });
   } catch (err: any) {
     res.status(400).json({
       ok: false,
