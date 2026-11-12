@@ -69,7 +69,6 @@
                             <div class="col-auto"><img src="assets/img/favicon48.png" class="mx-100" alt="" /></div>
                             <div class="col ps-0 align-self-center d-none d-sm-block">
                                 <h5 class="fw-normal text-dark mb-0">Scrapper</h5>
-                                <p class="small text-secondary">Gestión de Licitaciones</p>
                             </div>
                         </div>
                     </a>
@@ -77,15 +76,9 @@
 
                 <div class="col-auto ms-auto">
                     <div class="d-flex align-items-center">
-                        <figure class="avatar avatar-40 rounded-circle coverimg vm me-2 mb-0">
+                        <figure class="avatar avatar-36 rounded-circle coverimg vm me-2 mb-0">
                             <img src="assets/img/user-1.jpg" alt="" />
                         </figure>
-                        <div class="d-none d-lg-block">
-                            <p class="mb-0 lh-1">
-                                <span class="text-dark fw-medium">Administrador</span><br>
-                                <small class="text-secondary small">Panel de Control</small>
-                            </p>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -145,10 +138,7 @@
         <div class="container-fluid mb-3">
             <div class="row align-items-center page-title">
                 <div class="col-12 col-md">
-                    <h5 class="mb-0">Administración de Clientes, Usuarios y Actividad</h5>
-                    <p class="small text-secondary mb-0">
-                        Gestión multitenant de organizaciones clientes, alta de usuarios anclados a correo electrónico y auditoría de actividad.
-                    </p>
+                    <h5 class="mb-0">Administración</h5>
                 </div>
             </div>
         </div>
@@ -351,8 +341,7 @@
                     <div class="card border-0 shadow-sm">
                         <div class="card-header bg-none border-0 pt-3 pb-0 d-flex flex-wrap justify-content-between align-items-center gap-2">
                             <div>
-                                <h6 class="title mb-1"><i class="bi bi-buildings text-primary me-2"></i>Padrón de Clientes Registrados</h6>
-                                <p class="small text-secondary mb-0">Administra los datos fiscales, contactos y acceso de cada organización cliente.</p>
+                                <h6 class="title mb-0"><i class="bi bi-buildings text-primary me-2"></i>Padrón de Clientes Registrados</h6>
                             </div>
                             <div class="d-flex gap-2">
                                 <button type="button" class="btn btn-sm btn-outline-secondary" id="btnRefreshTenants">
@@ -453,8 +442,7 @@
                     <div class="card border-0 shadow-sm">
                         <div class="card-header bg-none border-0 pt-3 pb-0 d-flex flex-wrap justify-content-between align-items-center gap-2">
                             <div>
-                                <h6 class="title mb-1"><i class="bi bi-person-lines-fill text-primary me-2"></i>Directorio de Usuarios y Perfiles</h6>
-                                <p class="small text-secondary mb-0">Cada usuario inicia sesión con su correo electrónico y opera dentro de su cliente asignado.</p>
+                                <h6 class="title mb-0"><i class="bi bi-person-lines-fill text-primary me-2"></i>Directorio de Usuarios y Perfiles</h6>
                             </div>
                             <div class="d-flex flex-wrap align-items-center gap-2">
                                 <select id="filterUsersByTenant" class="form-select form-select-sm" style="width: 220px;">
@@ -497,8 +485,7 @@
                     <div class="card border-0 shadow-sm">
                         <div class="card-header bg-none border-0 pt-3 pb-0 d-flex flex-wrap justify-content-between align-items-center gap-2">
                             <div>
-                                <h6 class="title mb-1"><i class="bi bi-clock-history text-primary me-2"></i>Bitácora de Actividad</h6>
-                                <p class="small text-secondary mb-0">Registro auditable de accesos, extracciones, análisis y cambios por cliente y usuario.</p>
+                                <h6 class="title mb-0"><i class="bi bi-clock-history text-primary me-2"></i>Bitácora de Actividad</h6>
                             </div>
                             <div class="d-flex flex-wrap align-items-center gap-2">
                                 <select id="filterActivityByTenant" class="form-select form-select-sm" style="width: 210px;">
@@ -607,7 +594,6 @@
                             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
                                 <div>
                                     <h6 class="title mb-0"><i class="bi bi-database-check text-primary me-2"></i>Catálogo de Licitaciones Registradas</h6>
-                                    <p class="small text-secondary mb-0">Revisa expedientes procesados, orígenes, estados y elimina registros con todos sus archivos asociados.</p>
                                 </div>
                                 <div class="d-flex align-items-center gap-2">
                                     <button type="button" class="btn btn-sm btn-outline-secondary" id="btnRefreshAdminTenders">
@@ -640,9 +626,9 @@
                                 <div class="col-6 col-md-3">
                                     <select id="filterTendersOrigen" class="form-select form-select-sm">
                                         <option value="">Todos los orígenes</option>
-                                        <option value="url">🌐 Extracción por URL</option>
-                                        <option value="source">🛰️ Fuente Automática</option>
-                                        <option value="email">📧 Correo Electrónico</option>
+                                        <option value="url">Extracción por URL</option>
+                                        <option value="source">Fuente Automática</option>
+                                        <option value="email">Correo Electrónico</option>
                                     </select>
                                 </div>
                             </div>

@@ -12,6 +12,15 @@
     tenders: [],
   };
 
+  function fmtDateTime(val, fallback = '-') {
+    if (!val) return fallback;
+    if (window.ScrapperDate?.formatDateTime) return window.ScrapperDate.formatDateTime(val, fallback);
+    const d = new Date(val);
+    if (isNaN(d.getTime())) return String(val);
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
   function escapeHtml(str) {
     if (!str) return '';
     return String(str)
@@ -395,7 +404,7 @@
           : `<span class="badge bg-secondary">Inactivo</span>`;
 
         const lastAccess = u.ultimo_acceso_at
-          ? new Date(u.ultimo_acceso_at).toLocaleString()
+          ? fmtDateTime(u.ultimo_acceso_at, 'Sin ingresos')
           : 'Sin ingresos';
 
         return `<tr>
@@ -572,7 +581,7 @@
     tbody.innerHTML = state.activityLogs
       .map((a) => {
         return `<tr>
-          <td class="text-nowrap">${new Date(a.created_at).toLocaleString()}</td>
+          <td class="text-nowrap">${fmtDateTime(a.created_at)}</td>
           <td><span class="badge bg-light text-dark border">${a.tenant_nombre || `Cliente #${a.tenant_id || 1}`}</span></td>
           <td>
             <div class="fw-bold text-dark">${a.user_nombre || '-'}</div>
@@ -662,7 +671,7 @@
         }
 
         const expCode = t.numero_expediente || `ID-${t.id}`;
-        const dateStr = t.created_at ? new Date(t.created_at).toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-';
+        const dateStr = fmtDateTime(t.created_at, '-');
 
         return `<tr>
           <td>

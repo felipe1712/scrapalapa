@@ -4,6 +4,15 @@
 (function () {
   'use strict';
 
+  function fmtDateTime(val, fallback = '-') {
+    if (!val) return fallback;
+    if (window.ScrapperDate?.formatDateTime) return window.ScrapperDate.formatDateTime(val, fallback);
+    const d = new Date(val);
+    if (isNaN(d.getTime())) return String(val);
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
   const state = {
     role: 'admin',
     settings: null,
@@ -386,7 +395,7 @@
 
     state.history.forEach((h) => {
       const tr = document.createElement('tr');
-      const fechaStr = new Date(h.fecha).toLocaleString();
+      const fechaStr = fmtDateTime(h.fecha);
       const diffStr = JSON.stringify(h.campos_modificados || {});
       tr.innerHTML = `
         <td class="text-nowrap">${fechaStr}</td>
@@ -489,7 +498,7 @@
         (data.recent_logs || [])
           .map(
             (r) => `<tr>
-          <td class="text-nowrap">${new Date(r.fecha).toLocaleTimeString()}</td>
+          <td class="text-nowrap">${fmtDateTime(r.fecha)}</td>
           <td><code>${r.tarea}</code></td>
           <td><span class="badge bg-light text-dark border">${r.modelo}</span></td>
           <td class="text-end">${r.tokens_entrada} / ${r.tokens_salida} / ${Number(r.tokens_cache_creacion || 0) + Number(r.tokens_cache_lectura || 0)}</td>
@@ -936,14 +945,14 @@
         const lastCheckEl = document.getElementById('emailStatLastCheck');
         if (lastCheckEl) {
           lastCheckEl.textContent = acc.ultima_revision_at
-            ? new Date(acc.ultima_revision_at).toLocaleString()
+            ? fmtDateTime(acc.ultima_revision_at, 'Sin revisar aún')
             : 'Sin revisar aún';
         }
         const nextCheckEl = document.getElementById('emailStatNextCheck');
         if (nextCheckEl) {
           nextCheckEl.textContent =
             acc.activo && acc.proxima_revision_at
-              ? new Date(acc.proxima_revision_at).toLocaleString()
+              ? fmtDateTime(acc.proxima_revision_at)
               : acc.activo
                 ? 'En el siguiente ciclo'
                 : 'Pausado';
@@ -976,7 +985,7 @@
                 ? `<a href="licitaciones.html" class="fw-bold text-primary text-decoration-none"><i class="bi bi-file-earmark-richtext me-1"></i>Ver Licitación #${m.tender_id}</a><div class="small text-secondary">${m.detalle || ''}</div>`
                 : `<span class="text-secondary">${m.detalle || '-'}</span>`;
               return `<tr>
-                <td class="text-nowrap">${m.received_at ? new Date(m.received_at).toLocaleString() : new Date(m.created_at).toLocaleString()}</td>
+                <td class="text-nowrap">${fmtDateTime(m.received_at || m.created_at)}</td>
                 <td class="text-truncate" style="max-width: 180px;">${m.from_address}</td>
                 <td class="fw-medium text-dark text-truncate" style="max-width: 240px;">${m.subject}</td>
                 <td class="text-center"><span class="badge bg-light text-dark border">${m.attachments_count || 0}</span></td>

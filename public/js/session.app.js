@@ -4,6 +4,30 @@
 (function () {
   'use strict';
 
+  function formatDate(val, fallback = '-') {
+    if (!val) return fallback;
+    const d = val instanceof Date ? val : new Date(val);
+    if (isNaN(d.getTime())) return String(val);
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
+  function formatDateTime(val, fallback = '-') {
+    if (!val) return fallback;
+    const d = val instanceof Date ? val : new Date(val);
+    if (isNaN(d.getTime())) return String(val);
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    const hh = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+    return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
+  }
+
+  window.ScrapperDate = { formatDate, formatDateTime };
+
   const ROLE_LABELS = {
     superadmin: 'Super Administrador',
     admin: 'Administrador',

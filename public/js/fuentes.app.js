@@ -4,6 +4,15 @@
 (function () {
   'use strict';
 
+  function fmtDateTime(val, fallback = '-') {
+    if (!val) return fallback;
+    if (window.ScrapperDate?.formatDateTime) return window.ScrapperDate.formatDateTime(val, fallback);
+    const d = new Date(val);
+    if (isNaN(d.getTime())) return String(val);
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
   const state = {
     sources: [],
     runs: [],
@@ -86,7 +95,7 @@
           : '';
 
         const lastRev = s.ultima_revision_at
-          ? new Date(s.ultima_revision_at).toLocaleString()
+          ? fmtDateTime(s.ultima_revision_at, 'Sin ejecutar aún')
           : 'Sin ejecutar aún';
 
         return `<tr>
@@ -165,7 +174,7 @@
       .map((r) => {
         const sec = (Number(r.duracion_ms || 0) / 1000).toFixed(1);
         return `<tr>
-          <td class="text-nowrap">${new Date(r.created_at).toLocaleString()}</td>
+          <td class="text-nowrap">${fmtDateTime(r.created_at)}</td>
           <td class="fw-medium text-dark">${r.source_nombre || `#${r.source_id}`}</td>
           <td><span class="badge bg-light text-dark border">${r.disparo}</span></td>
           <td>${formatStatusBadge(r.estado)}</td>
