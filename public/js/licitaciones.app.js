@@ -49,20 +49,70 @@
     }
   }
 
-  // Helper: Format Date
+  // Helper: Format Date uniformly to dd/mm/aaaa
   function formatDate(val) {
     if (!val) return 'Por definir';
-    try {
-      const d = new Date(val);
-      if (isNaN(d.getTime())) return String(val);
-      return d.toLocaleDateString('es-MX', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-      });
-    } catch {
-      return String(val);
+    const raw = String(val).trim();
+    if (!raw) return 'Por definir';
+
+    const pad = (n) => String(n).padStart(2, '0');
+    const formatDMY = (d, m, y) => `${pad(d)}/${pad(m)}/${y}`;
+
+    // 1. ISO YYYY-MM-DD (avoid timezone shift)
+    const isoMatch = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s]|$)/);
+    if (isoMatch) {
+      return formatDMY(Number(isoMatch[3]), Number(isoMatch[2]), isoMatch[1]);
     }
+
+    // 2. DD/MM/YYYY or DD-MM-YYYY
+    const dmyMatch = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    if (dmyMatch) {
+      let y = Number(dmyMatch[3]);
+      if (y < 100) y += 2000;
+      return formatDMY(Number(dmyMatch[1]), Number(dmyMatch[2]), y);
+    }
+
+    const normRaw = raw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+    // 3. Spanish text dates: "10 de noviembre de 2026", "10 de nov", "10 de novi"
+    const esMonths = {
+      ene: 1, feb: 2, mar: 3, abr: 4, may: 5, jun: 6,
+      jul: 7, ago: 8, sep: 9, oct: 10, nov: 11, dic: 12,
+    };
+    const esMatch = normRaw.match(/^(\d{1,2})\s*(?:de\s*)?([a-z]{3,})(?:\s*(?:de\s*|del\s*)?(\d{4}))?/);
+    if (esMatch) {
+      const mKey = esMatch[2].slice(0, 3);
+      if (esMonths[mKey]) {
+        const y = esMatch[3] ? Number(esMatch[3]) : new Date().getFullYear();
+        return formatDMY(Number(esMatch[1]), esMonths[mKey], y);
+      }
+    }
+
+    // 4. English JS Date string: "Wed Nov 11" or "Wed Nov 11 2026 ..."
+    const enMonths = {
+      jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+      jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+    };
+    const enMatch = normRaw.match(/^(?:[a-z]{3},?\s+)?([a-z]{3,})\s+(\d{1,2})(?:,?\s+(\d{4}))?/);
+    if (enMatch) {
+      const mKey = enMatch[1].slice(0, 3);
+      if (enMonths[mKey]) {
+        const y = enMatch[3] ? Number(enMatch[3]) : new Date().getFullYear();
+        return formatDMY(Number(enMatch[2]), enMonths[mKey], y);
+      }
+    }
+
+    // 5. Fallback native Date parse
+    try {
+      const d = new Date(raw);
+      if (!isNaN(d.getTime())) {
+        return formatDMY(d.getDate(), d.getMonth() + 1, d.getFullYear());
+      }
+    } catch {
+      // ignore
+    }
+
+    return raw;
   }
 
   // Helper: Render simple markdown to HTML (headings, bold, lists, breaks)
@@ -504,7 +554,7 @@
               <span class="badge bg-light text-dark border">
                 Paso ${idx + 1}
               </span>
-              <span class="small fw-bold text-dark">
+              <span class="small fw-bold text-dark text-nowrap">
                 <i class="bi bi-calendar3 me-1 text-primary"></i>${formatDate(item.fecha)}
               </span>
             </div>
@@ -528,7 +578,7 @@
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td class="fw-semibold text-dark">${escapeHtml(eventName)}</td>
-        <td><i class="bi bi-calendar3 text-secondary me-1"></i>${formatDate(item.fecha)}</td>
+        <td class="text-nowrap"><i class="bi bi-calendar3 text-secondary me-1"></i>${formatDate(item.fecha)}</td>
         <td>${escapeHtml(item.hora || 'No especificada')}</td>
         <td class="text-secondary">${escapeHtml(item.lugar || 'Oficinas convocante / Sistema')}</td>
         <td>${badgeHtml}</td>

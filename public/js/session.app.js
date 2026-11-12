@@ -95,8 +95,8 @@
           : 'bg-secondary';
 
     let tenantSelectorHtml = `
-      <span class="badge bg-light text-dark border me-2 d-none d-md-inline-block" title="Cliente Activo">
-        <i class="bi bi-building me-1 text-primary"></i>${session.activeTenantName}
+      <span class="badge bg-light text-dark border me-3 d-none d-md-inline-block px-3 py-2" title="Cliente Activo">
+        ${session.activeTenantName}
       </span>
     `;
 
@@ -106,14 +106,13 @@
           (t) =>
             `<option value="${t.id}" ${
               Number(t.id) === Number(session.activeTenantId) ? 'selected' : ''
-            }>🏢 ${t.nombre_comercial}${!t.activo ? ' (Suspendido)' : ''}</option>`
+            }>${t.nombre_comercial}${!t.activo ? ' (Suspendido)' : ''}</option>`
         )
         .join('');
 
       tenantSelectorHtml = `
         <div class="d-none d-md-flex align-items-center me-3">
-          <label class="small text-secondary me-1 text-nowrap" for="headerTenantSelect">Cliente:</label>
-          <select id="headerTenantSelect" class="form-select form-select-sm fw-bold border-primary" style="max-width: 220px;">
+          <select id="headerTenantSelect" class="form-select form-select-sm fw-semibold border-primary" style="min-width: 280px; max-width: 440px;" title="Cliente Activo">
             ${optionsHtml}
           </select>
         </div>
@@ -123,17 +122,11 @@
     rightArea.className = 'col-auto ms-auto d-flex align-items-center';
     rightArea.innerHTML = `
       ${tenantSelectorHtml}
-      <div class="d-flex align-items-center me-3">
+      <div class="d-flex align-items-center me-3" title="${roleLabel} · ${session.email}">
         <figure class="avatar avatar-36 rounded-circle coverimg vm me-2 mb-0">
           <img src="assets/img/user-1.jpg" alt="" />
         </figure>
-        <div class="d-none d-sm-block lh-1">
-          <div class="text-dark fw-bold small">${session.nombreCompleto}</div>
-          <div class="mt-1">
-            <span class="badge ${roleBadgeClass}" style="font-size: 0.68rem;">${roleLabel}</span>
-            <small class="text-secondary ms-1" style="font-size: 0.72rem;">${session.email}</small>
-          </div>
-        </div>
+        <span class="d-none d-sm-inline text-dark fw-semibold small">${session.nombreCompleto}</span>
       </div>
       <button type="button" id="btnHeaderLogout" class="btn btn-sm btn-outline-danger" title="Cerrar Sesión">
         <i class="bi bi-box-arrow-right me-1"></i><span class="d-none d-md-inline">Salir</span>

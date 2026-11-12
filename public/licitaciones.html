@@ -119,10 +119,12 @@
             padding-left: 0;
             margin-bottom: 0;
             position: relative;
+            max-width: 100%;
         }
         .timeline-windoors.left-only li {
             margin-bottom: 1.25rem;
             position: relative;
+            max-width: 100%;
         }
         .timeline-windoors.left-only li .card {
             border: 1px solid #e2e8f0;
@@ -216,7 +218,6 @@
                             <div class="col-auto"><img src="assets/img/favicon48.png" class="mx-100" alt="" /></div>
                             <div class="col ps-0 align-self-center d-none d-sm-block">
                                 <h5 class="fw-normal text-dark mb-0">Scrapper</h5>
-                                <p class="small text-secondary">Gestión de Licitaciones</p>
                             </div>
                         </div>
                     </a>
@@ -224,15 +225,9 @@
 
                 <div class="col-auto ms-auto">
                     <div class="d-flex align-items-center">
-                        <figure class="avatar avatar-40 rounded-circle coverimg vm me-2 mb-0">
+                        <figure class="avatar avatar-36 rounded-circle coverimg vm me-2 mb-0">
                             <img src="assets/img/user-1.jpg" alt="" />
                         </figure>
-                        <div class="d-none d-lg-block">
-                            <p class="mb-0 lh-1">
-                                <span class="text-dark fw-medium">Administrador</span><br>
-                                <small class="text-secondary small">Panel de Control</small>
-                            </p>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -299,7 +294,6 @@
             <div class="row align-items-center page-title">
                 <div class="col-12 col-md">
                     <h5 class="mb-0">Extracción y Síntesis de Licitaciones por URL</h5>
-                    <p class="small text-secondary mb-0">Exploración jerárquica por convocatoria, cronograma de actos y visor in-situ.</p>
                 </div>
                 <div class="col-12 col-md-auto mt-2 mt-md-0 d-flex gap-2">
                     <button type="button" id="btnOcrDiagnostics" class="btn btn-sm btn-outline-secondary" title="Comprobar salud de Surya OCR y Python">
@@ -463,11 +457,6 @@
                             <div class="card-body p-3 p-md-4">
                                 <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
                                     <div class="flex-grow-1" style="min-width: 260px; max-width: 100%;">
-                                        <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
-                                            <span id="detailProcCodeBadge" class="badge bg-primary fs-6 px-3 py-2">-</span>
-                                            <span id="detailStatusBadge" class="badge bg-success-subtle text-success border border-success-subtle">Vigente</span>
-                                            <span id="detailSourceBadge" class="badge bg-light text-dark border">-</span>
-                                        </div>
                                         <h4 id="detailProcTitle" class="fw-bold text-dark mb-1" style="word-break: break-word;">Cargando licitación...</h4>
                                         <div class="small text-secondary mb-2" style="word-break: break-word;">
                                             <i class="bi bi-building me-1 text-primary"></i><span id="detailEntidadText" class="fw-medium text-dark">-</span>
@@ -500,7 +489,6 @@
                                         <h6 class="title mb-0">
                                             <i class="bi bi-calendar-week text-primary me-2"></i>Cronograma de Actos &amp; Trámites
                                         </h6>
-                                        <small class="text-secondary">Fechas clave de los actos legales (Junta de Aclaraciones, Apertura, Fallo, Firma de Contrato)</small>
                                     </div>
                                     <div class="d-flex flex-wrap align-items-center gap-2">
                                         <span id="detailNextMilestoneAlert" class="badge bg-warning text-dark px-3 py-2 d-none">
@@ -564,7 +552,6 @@
                                     <h6 class="title mb-0">
                                         <i class="bi bi-check2-square text-success me-2"></i>Requisitos Obligatorios &amp; Condiciones de Participación
                                     </h6>
-                                    <span class="badge bg-light text-secondary border">Documentación Indispensable</span>
                                 </div>
                             </div>
                             <div class="card-body p-3 p-md-4">
@@ -604,7 +591,6 @@
                                     <h6 class="title mb-0">
                                         <i class="bi bi-journal-text text-primary me-2"></i>Síntesis Ejecutiva de la Licitación
                                     </h6>
-                                    <span class="badge bg-light text-primary border">Resumen Inteligente Claude</span>
                                 </div>
                             </div>
                             <div class="card-body p-3 p-md-4">
@@ -631,18 +617,6 @@
                                         </a>
                                         <a href="#" id="detailViewerDownloadLink" class="btn btn-sm btn-theme">
                                             <i class="bi bi-download me-1"></i> Descargar
-                                        </a>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="card-body p-2">
-                                <iframe id="detailPdfViewerFrame" src="about:blank" class="w-100 rounded border" style="height: 640px; background: #f4f6f8;"></iframe>
-                            </div>
-                        </div>
-
-                    </div>
-                </div>
-            </div>
                                         </a>
                                     </div>
                                 </div>

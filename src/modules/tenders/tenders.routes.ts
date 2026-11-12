@@ -10,6 +10,18 @@ import { authService } from '../auth/auth.service.js';
 
 export const tendersRouter = Router();
 
+function toIsoDateOnly(val: any): string | null {
+  if (!val) return null;
+  if (val instanceof Date) {
+    return Number.isNaN(val.getTime()) ? null : val.toISOString().slice(0, 10);
+  }
+  const str = String(val).trim();
+  const isoMatch = str.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (isoMatch) return isoMatch[1];
+  const parsed = new Date(str);
+  return Number.isNaN(parsed.getTime()) ? str : parsed.toISOString().slice(0, 10);
+}
+
 const IngestUrlSchema = z.object({
   url: z.string().trim().url('Ingresa una URL válida (http:// o https://)'),
   keywords: z.string().trim().optional().default(''),
@@ -96,7 +108,7 @@ tendersRouter.get('/tree', async (req: Request, res: Response) => {
           requisitos_clave: t.campos_extraidos_json?.requisitos_clave || [],
           estado: 'vigente',
           proximo_evento_nombre: null,
-          proximo_evento_fecha: t.fecha_limite ? String(t.fecha_limite).slice(0, 10) : null,
+          proximo_evento_fecha: toIsoDateOnly(t.fecha_limite),
           created_at: t.created_at,
         },
       ];
@@ -209,14 +221,14 @@ tendersRouter.get('/procedures/:id', async (req: Request, res: Response) => {
       effectiveCronograma = [
         {
           evento: 'Publicación de Convocatoria',
-          fecha: String(tender.created_at).slice(0, 10),
+          fecha: toIsoDateOnly(tender.created_at) || new Date().toISOString().slice(0, 10),
           hora: '09:00 hrs',
           lugar: 'Portal Oficial',
           estado: 'completado',
         },
         {
           evento: 'Límite de Presentación de Propuestas',
-          fecha: String(tender.fecha_limite).slice(0, 10),
+          fecha: toIsoDateOnly(tender.fecha_limite) || '',
           hora: '10:00 hrs',
           lugar: 'Vía electrónica / Oficina convocante',
           estado: 'proximo',
