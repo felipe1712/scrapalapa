@@ -5,6 +5,7 @@ import {
   normalizeForSearch,
   parseKeywordsList,
   KeywordHit,
+  getDocumentPriorityScore,
 } from '../scraper/lightpanda.service.js';
 import { documentProcessorService, ProcessedDocumentResult } from '../scraper/document-processor.service.js';
 import { claudeService } from '../llm/claude.service.js';
@@ -224,8 +225,15 @@ export class TenderIngestionService {
       const hitSpecificAttachments = pageData.attachments.filter((a) => Boolean(a.matchedKeyword));
       const candidateAttachments =
         keywordsList.length > 0 && hitSpecificAttachments.length > 0
-          ? hitSpecificAttachments
-          : pageData.attachments;
+          ? [...hitSpecificAttachments]
+          : [...pageData.attachments];
+
+      // Ordenar por prioridad documental: Bases y Convocatoria primero, Fallos/Diferimientos al final
+      candidateAttachments.sort((a, b) => {
+        const scoreA = getDocumentPriorityScore(a.url, a.label);
+        const scoreB = getDocumentPriorityScore(b.url, b.label);
+        return scoreB - scoreA;
+      });
 
       const attachmentsToProcess = processAttachments
         ? candidateAttachments.slice(0, maxAttachments)
@@ -508,20 +516,40 @@ export class TenderIngestionService {
         ]
       );
 
-      // Desglose y persistencia de sub-procedimientos individuales en tender_procedures
-      const rawProcedures = Array.isArray(structuredFields?.procedimientos) && structuredFields.procedimientos.length > 0
-        ? structuredFields.procedimientos
-        : [
-            {
-              numero_procedimiento: finalExpediente || `PROC-${tenderId}`,
-              titulo_objeto: finalTitle,
-              entidad_convocante: finalEntidad || '',
-              alcance_periodo: '',
-              cronograma: Array.isArray(structuredFields?.cronograma_general) ? structuredFields.cronograma_general : [],
-              requisitos_clave: Array.isArray(structuredFields?.requisitos_clave) ? structuredFields.requisitos_clave : [],
-              resumen_ejecutivo: claudeSynthesis || '',
-            },
-          ];
+      // Desglose y persistencia de sub-procedimientos individuales en tender_procedures.
+      // Si el portal contiene múltiples convocatorias (ej. INDAABIN con Fumigación, Limpieza, Seguridad),
+      // registrar cada una como sub-procedimiento para que el usuario pueda navegar entre todas.
+      let rawProcedures: any[] = [];
+      if (Array.isArray(structuredFields?.procedimientos) && structuredFields.procedimientos.length > 1) {
+        rawProcedures = structuredFields.procedimientos;
+      } else if (pageData.discoveredSubpages && pageData.discoveredSubpages.length > 1) {
+        rawProcedures = pageData.discoveredSubpages.map((sub, idx) => {
+          const isMain = idx === 0 || (sub.expediente && finalExpediente && sub.expediente === finalExpediente);
+          return {
+            numero_procedimiento: sub.expediente || `PROC-${tenderId}-${idx + 1}`,
+            titulo_objeto: sub.title || (isMain ? finalTitle : `Convocatoria ${idx + 1}`),
+            entidad_convocante: finalEntidad || '',
+            alcance_periodo: '',
+            cronograma: isMain && Array.isArray(structuredFields?.cronograma_general) ? structuredFields.cronograma_general : [],
+            requisitos_clave: isMain && Array.isArray(structuredFields?.requisitos_clave) ? structuredFields.requisitos_clave : [],
+            resumen_ejecutivo: isMain ? (claudeSynthesis || '') : `Convocatoria localizada en portal: ${sub.title}. Enlace: ${sub.url}`,
+          };
+        });
+      } else if (Array.isArray(structuredFields?.procedimientos) && structuredFields.procedimientos.length === 1) {
+        rawProcedures = structuredFields.procedimientos;
+      } else {
+        rawProcedures = [
+          {
+            numero_procedimiento: finalExpediente || `PROC-${tenderId}`,
+            titulo_objeto: finalTitle,
+            entidad_convocante: finalEntidad || '',
+            alcance_periodo: '',
+            cronograma: Array.isArray(structuredFields?.cronograma_general) ? structuredFields.cronograma_general : [],
+            requisitos_clave: Array.isArray(structuredFields?.requisitos_clave) ? structuredFields.requisitos_clave : [],
+            resumen_ejecutivo: claudeSynthesis || '',
+          },
+        ];
+      }
 
       await db.query('DELETE FROM tender_procedures WHERE tender_id = $1', [tenderId]);
 
@@ -550,6 +578,10 @@ export class TenderIngestionService {
           }
         }
 
+        const procTitle = (proc.titulo_objeto && proc.titulo_objeto !== 'Procedimiento sin título' && proc.titulo_objeto !== proc.numero_procedimiento)
+          ? proc.titulo_objeto
+          : finalTitle || proc.numero_procedimiento || 'Licitación Pública';
+
         await db.query(
           `INSERT INTO tender_procedures (
             tender_id, tenant_id, numero_procedimiento, titulo_objeto, entidad,
@@ -560,7 +592,7 @@ export class TenderIngestionService {
             tenderId,
             tenantId,
             (proc.numero_procedimiento || finalExpediente || `PROC-${tenderId}`).slice(0, 175),
-            proc.titulo_objeto || finalTitle,
+            procTitle,
             (proc.entidad_convocante || finalEntidad || '').slice(0, 245),
             proc.alcance_periodo || '',
             JSON.stringify(cronoList),

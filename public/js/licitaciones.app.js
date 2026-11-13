@@ -633,9 +633,16 @@
     const metaEl = document.getElementById('detailViewerDocMeta');
     const newTabLink = document.getElementById('detailViewerNewTabLink');
     const downloadLink = document.getElementById('detailViewerDownloadLink');
+    const selectWrapper = document.getElementById('detailViewerDocSelectWrapper');
+    const selectEl = document.getElementById('detailViewerDocSelect');
+    const btnToggleViewer = document.getElementById('btnToggleViewerCard');
 
     if (!attachedDocs || attachedDocs.length === 0) {
       state.activeDocId = null;
+      if (selectWrapper) selectWrapper.classList.add('d-none');
+      if (btnToggleViewer) {
+        btnToggleViewer.innerHTML = '<i class="bi bi-eye me-1"></i> Ver Documento PDF';
+      }
       if (titleEl) titleEl.textContent = parentTender.titulo || 'Expediente Web';
       if (metaEl) metaEl.textContent = 'Este registro proviene de contenido web directo o aún no tiene PDF descargado.';
       if (viewerFrame) {
@@ -647,21 +654,59 @@
       return;
     }
 
-    const pdfDoc = attachedDocs.find((d) => d.file_type === 'pdf') || attachedDocs[0];
-    state.activeDocId = pdfDoc.id;
-
-    const downloadUrl = `/api/tenders/documents/${pdfDoc.id}/download`;
-
-    if (titleEl) titleEl.textContent = pdfDoc.file_name || `Documento #${pdfDoc.id}`;
-    if (metaEl) {
-      const sizeKb = pdfDoc.file_size_bytes ? Math.round(pdfDoc.file_size_bytes / 1024) : 0;
-      const ocrTag = pdfDoc.metodo_extraccion ? ` · Extracción: ${pdfDoc.metodo_extraccion}` : '';
-      metaEl.textContent = `${sizeKb > 0 ? sizeKb + ' KB' : 'Documento'} · ${pdfDoc.file_type || 'pdf'}${ocrTag}`;
+    // Priorizar Bases y Convocatorias por encima de Diferimientos o Actas
+    function getClientDocPriorityScore(doc) {
+      const str = `${doc.source_url || ''} ${doc.file_name || ''}`.toLowerCase();
+      if (str.includes('convocatoria') || str.includes('bases') || str.includes('pliego')) return 100;
+      if (str.includes('anexo') || str.includes('apendice') || str.includes('tecnic')) return 80;
+      if (str.includes('junta') || str.includes('aclaracion') || str.includes('visita')) return 60;
+      if (str.includes('fallo') || str.includes('diferimiento') || str.includes('adjudic') || str.includes('acta')) return 20;
+      return 50;
     }
 
-    if (viewerFrame) viewerFrame.src = downloadUrl;
-    if (newTabLink) newTabLink.href = downloadUrl;
-    if (downloadLink) downloadLink.href = downloadUrl;
+    const sortedDocs = [...attachedDocs].sort((a, b) => getClientDocPriorityScore(b) - getClientDocPriorityScore(a));
+
+    if (btnToggleViewer) {
+      btnToggleViewer.innerHTML = sortedDocs.length > 1
+        ? `<i class="bi bi-file-earmark-pdf-fill me-1"></i> Ver Documentos (${sortedDocs.length})`
+        : `<i class="bi bi-eye me-1"></i> Ver Documento PDF`;
+    }
+
+    function renderActiveDocument(doc) {
+      state.activeDocId = doc.id;
+      const downloadUrl = `/api/tenders/documents/${doc.id}/download`;
+
+      if (titleEl) titleEl.textContent = doc.file_name || `Documento #${doc.id}`;
+      if (metaEl) {
+        const sizeKb = doc.file_size_bytes ? Math.round(doc.file_size_bytes / 1024) : 0;
+        const ocrTag = doc.metodo_extraccion ? ` · Extracción: ${doc.metodo_extraccion}` : '';
+        metaEl.textContent = `${sizeKb > 0 ? sizeKb + ' KB' : 'Documento'} · ${doc.file_type || 'pdf'}${ocrTag}`;
+      }
+
+      if (viewerFrame) viewerFrame.src = downloadUrl;
+      if (newTabLink) newTabLink.href = downloadUrl;
+      if (downloadLink) downloadLink.href = downloadUrl;
+    }
+
+    if (selectWrapper && selectEl) {
+      if (sortedDocs.length > 1) {
+        selectWrapper.classList.remove('d-none');
+        selectEl.innerHTML = sortedDocs
+          .map((d, i) => `<option value="${d.id}">${escapeHtml(d.file_name || `Documento ${i + 1}`)}</option>`)
+          .join('');
+        selectEl.value = String(sortedDocs[0].id);
+        selectEl.onchange = (e) => {
+          const selectedId = Number(e.target.value);
+          const found = sortedDocs.find((d) => d.id === selectedId);
+          if (found) renderActiveDocument(found);
+        };
+      } else {
+        selectWrapper.classList.add('d-none');
+        selectEl.innerHTML = '';
+      }
+    }
+
+    renderActiveDocument(sortedDocs[0]);
   }
 
   // Inspect Raw OCR Text (Modal) - NUNCA falla si no hay PDF

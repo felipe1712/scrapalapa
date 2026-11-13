@@ -26,6 +26,13 @@ export interface LightpandaAuthOptions {
   loginUrl?: string;
 }
 
+export interface DiscoveredSubpage {
+  url: string;
+  title: string;
+  expediente?: string;
+  matchedKeywords?: string[];
+}
+
 export interface LightpandaPageResult {
   url: string;
   finalUrl: string;
@@ -40,6 +47,48 @@ export interface LightpandaPageResult {
   keywordHits: KeywordHit[];
   sessionCookieHeader?: string;
   basicAuthHeader?: string;
+  discoveredSubpages?: DiscoveredSubpage[];
+}
+
+/**
+ * Evalúa la prioridad de un archivo adjunto para que las Bases y Convocatoria
+ * se procesen e inspeccionen antes que incidentes secundarios (fallos, diferimientos, actas).
+ */
+export function getDocumentPriorityScore(urlStr: string, label = ''): number {
+  const norm = normalizeForSearch(`${urlStr} ${label}`);
+  // 1. Convocatoria y Bases principales (máxima prioridad)
+  if (norm.includes('convocatoria') || norm.includes('bases') || norm.includes('pliego')) return 100;
+  // 2. Anexos técnicos y especificaciones
+  if (norm.includes('anexo') || norm.includes('terminos') || norm.includes('tdr') || norm.includes('apendice')) return 80;
+  // 3. Juntas de aclaraciones y modificaciones
+  if (norm.includes('junta') || norm.includes('aclaracion') || norm.includes('adenda') || norm.includes('modificator')) return 60;
+  // 4. Fallos, actas y diferimientos (menor prioridad para visualización inicial)
+  if (norm.includes('fallo') || norm.includes('diferimiento') || norm.includes('suspension') || norm.includes('cancelac')) return 20;
+  // 5. PDFs genéricos
+  if (norm.endsWith('.pdf')) return 50;
+  return 10;
+}
+
+/**
+ * Detecta si un hipervínculo interno apunta a una licitación o convocatoria individual dentro de un portal/gaceta.
+ */
+export function isCandidateTenderLink(urlStr: string, label = ''): boolean {
+  const norm = normalizeForSearch(`${urlStr} ${label}`);
+  if (norm.includes('javascript:') || norm.includes('mailto:') || norm.includes('#') || norm.includes('tel:')) return false;
+  return (
+    norm.includes('convocatoria') ||
+    norm.includes('licitaci') ||
+    norm.includes('concurso') ||
+    norm.includes('procedimiento') ||
+    norm.includes('adquisici') ||
+    norm.includes('arrendamiento') ||
+    norm.includes('servicio') ||
+    norm.includes('cpne') ||
+    norm.includes('lpn') ||
+    norm.includes('ia-') ||
+    norm.includes('invitaci') ||
+    /\/documentos\/[a-z0-9\-_]+/.test(urlStr.toLowerCase())
+  );
 }
 
 /**
@@ -227,10 +276,28 @@ function analyzeHtmlWithKeywords(
     .replace(/\n\s*\n+/g, '\n\n')
     .trim();
 
+  // Ordenar adjuntos generales por prioridad documental (Bases y Convocatoria primero)
+  allAttachments.sort(
+    (a, b) => getDocumentPriorityScore(b.url, b.label) - getDocumentPriorityScore(a.url, a.label)
+  );
+
   const keywordHits: KeywordHit[] = [];
   const candidateDetailUrls: { url: string; matchedKeywords: string[]; snippet: string }[] = [];
+  const seenDetailUrls = new Set<string>();
 
   if (keywords.length === 0) {
+    // Si no se pasaron palabras clave, detectar y colectar todas las licitaciones/convocatorias presentes en el portal
+    for (const dl of globalLinks.detailLinks) {
+      if (isCandidateTenderLink(dl.url, dl.label) && !seenDetailUrls.has(dl.url)) {
+        seenDetailUrls.add(dl.url);
+        candidateDetailUrls.push({
+          url: dl.url,
+          matchedKeywords: [],
+          snippet: dl.label,
+        });
+      }
+    }
+
     return {
       title,
       text: cleanedText,
@@ -246,8 +313,8 @@ function analyzeHtmlWithKeywords(
   }));
 
   // Segmentación exhaustiva del DOM:
-  // Divide por filas de tabla (<tr>), encabezados de licitación (<h1>..<h4>) y contenedores (<article>),
-  // de modo que recorra absolutamente todas las licitaciones de la URL (tablas, tarjetas Elementor, listas).
+  // Divide por filas de tabla (<tr>), elementos de lista (<li>), encabezados (<h1>..<h4>) y contenedores (<article>),
+  // de modo que recorra absolutamente todas las licitaciones de la URL (tablas, listas gob.mx, tarjetas).
   const rawChunks: string[] = [];
 
   const trMatches = cleanHtmlForBlocks.match(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi);
@@ -255,14 +322,18 @@ function analyzeHtmlWithKeywords(
     rawChunks.push(...trMatches);
   }
 
-  const structuralParts = cleanHtmlForBlocks.split(/(?=<(?:tr|h1|h2|h3|h4|article)\b[^>]*>)/i);
+  const liMatches = cleanHtmlForBlocks.match(/<li\b[^>]*>[\s\S]*?<\/li>/gi);
+  if (liMatches && liMatches.length > 0) {
+    rawChunks.push(...liMatches);
+  }
+
+  const structuralParts = cleanHtmlForBlocks.split(/(?=<(?:tr|li|h1|h2|h3|h4|article)\b[^>]*>)/i);
   if (structuralParts.length > 1) {
     rawChunks.push(...structuralParts);
   }
 
   const matchedAttachmentsPriority: DiscoveredAttachment[] = [];
   const seenSnippets = new Set<string>();
-  const seenDetailUrls = new Set<string>();
 
   for (const blockHtml of rawChunks) {
     const blockPlain = blockHtml
@@ -315,6 +386,20 @@ function analyzeHtmlWithKeywords(
         sourceUrl: baseUrl,
         detailUrl: detailLinks[0]?.url,
         documentUrls: docUrls,
+      });
+    }
+  }
+
+  // Complementar: Si el portal contiene otras convocatorias/licitaciones que no contenían la palabra clave específica,
+  // agregarlas a candidateDetailUrls para no omitir las demás licitaciones presentes en la misma URL
+  for (const dl of globalLinks.detailLinks) {
+    if (candidateDetailUrls.length >= 20) break;
+    if (isCandidateTenderLink(dl.url, dl.label) && !seenDetailUrls.has(dl.url)) {
+      seenDetailUrls.add(dl.url);
+      candidateDetailUrls.push({
+        url: dl.url,
+        matchedKeywords: [],
+        snippet: dl.label,
       });
     }
   }
@@ -482,27 +567,43 @@ export class LightpandaService {
           }
         }
 
-        // Si hubo "Hits" de palabras clave con enlaces a subpáginas de detalle,
-        // Lightpanda entra a las subpáginas de los Hits (hasta 6) para traer todos los documentos PDF/Word asociados
+        // Si se detectaron enlaces a convocatorias o licitaciones individuales dentro de la URL,
+        // Lightpanda navega a cada una (hasta 12) para traer sus documentos PDF/Word y datos específicos
         const extraTexts: string[] = [];
+        const discoveredSubpages: DiscoveredSubpage[] = [];
 
-        if (keywords.length > 0 && parsed.candidateDetailUrls.length > 0) {
-          for (const candidate of parsed.candidateDetailUrls.slice(0, 6)) {
+        if (parsed.candidateDetailUrls.length > 0) {
+          for (const candidate of parsed.candidateDetailUrls.slice(0, 12)) {
             try {
               await page.goto(candidate.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
               const subUrl = page.url() || candidate.url;
               const subHtml = await page.content();
               const subParsed = analyzeHtmlWithKeywords(subHtml, subUrl, keywords);
 
+              const subTitle = subParsed.title && subParsed.title !== subUrl
+                ? subParsed.title
+                : candidate.snippet.slice(0, 160);
+
+              // Detectar posible número de expediente en el título o fragmento
+              const expMatch = subTitle.match(/([A-Z0-9]{2,12}-[A-Z0-9]{2,10}-[0-9\/-]{3,20})/i);
+              const subExp = expMatch ? expMatch[1] : undefined;
+
+              discoveredSubpages.push({
+                url: subUrl,
+                title: subTitle,
+                expediente: subExp,
+                matchedKeywords: candidate.matchedKeywords,
+              });
+
               if (subParsed.text) {
                 extraTexts.push(
-                  `=== DETALLE DE LICITACIÓN DETECTADA POR HIT [${candidate.matchedKeywords.join(', ')}] (${subUrl}) ===\n${subParsed.text}`
+                  `=== LICITACIÓN EN PORTAL: ${subTitle} (${subUrl}) ===\n${subParsed.text}`
                 );
               }
 
               for (const subDoc of subParsed.attachments) {
                 if (!parsed.attachments.some((existing) => existing.url === subDoc.url)) {
-                  parsed.attachments.unshift({
+                  parsed.attachments.push({
                     ...subDoc,
                     matchedKeyword: candidate.matchedKeywords.join(', '),
                     fromHitContext: candidate.snippet.slice(0, 140),
@@ -515,10 +616,15 @@ export class LightpandaService {
                 }
               }
             } catch {
-              // Continuar con el siguiente hit
+              // Continuar con la siguiente convocatoria
             }
           }
         }
+
+        // Ordenar siempre los adjuntos por prioridad: Bases y Convocatoria primero, Diferimientos y Actas al final
+        parsed.attachments.sort(
+          (a, b) => getDocumentPriorityScore(b.url, b.label) - getDocumentPriorityScore(a.url, a.label)
+        );
 
         const cookies = await page.cookies();
         if (cookies.length > 0) {
@@ -542,6 +648,7 @@ export class LightpandaService {
           keywordHits: parsed.keywordHits,
           sessionCookieHeader,
           basicAuthHeader,
+          discoveredSubpages,
         };
       } finally {
         await browser.disconnect();
@@ -697,11 +804,21 @@ export class LightpandaService {
     const html = await res.text();
     const parsed = analyzeHtmlWithKeywords(html, finalUrl, keywords);
 
-    // Seguir subpáginas de Hits para recolectar todos los documentos de licitación
+    // Seguir subpáginas de Hits y convocatorias para recolectar todos los documentos de licitación
     const extraTexts: string[] = [];
-    if (keywords.length > 0 && parsed.candidateDetailUrls.length > 0) {
-      for (const candidate of parsed.candidateDetailUrls.slice(0, 6)) {
+    const discoveredSubpages: DiscoveredSubpage[] = [];
+    if (parsed.candidateDetailUrls.length > 0) {
+      for (const candidate of parsed.candidateDetailUrls.slice(0, 12)) {
         try {
+          const subTitle = candidate.snippet.split('\n')[0].slice(0, 180).trim() || 'Convocatoria detectada';
+          const subExpMatch = `${candidate.url} ${candidate.snippet}`.match(/\b([A-Z0-9]{2,8}(?:-[A-Z0-9]{2,8}){2,7})\b/i);
+          discoveredSubpages.push({
+            url: candidate.url,
+            title: subTitle,
+            expediente: subExpMatch ? subExpMatch[1].toUpperCase() : undefined,
+            matchedKeywords: candidate.matchedKeywords,
+          });
+
           const subRes = await fetch(candidate.url, {
             redirect: 'follow',
             headers: reqHeaders,
@@ -723,7 +840,7 @@ export class LightpandaService {
               const subParsed = analyzeHtmlWithKeywords(subHtml, subRes.url || candidate.url, keywords);
               if (subParsed.text) {
                 extraTexts.push(
-                  `=== DETALLE DE LICITACIÓN DETECTADA POR HIT [${candidate.matchedKeywords.join(', ')}] (${candidate.url}) ===\n${subParsed.text}`
+                  `=== DETALLE DE LICITACIÓN DETECTADA (${candidate.url}) ===\n${subParsed.text}`
                 );
               }
               for (const subDoc of subParsed.attachments) {
@@ -747,6 +864,13 @@ export class LightpandaService {
       }
     }
 
+    // Priorizar documentos para que Bases y Convocatoria aparezcan antes que incidentes secundarios
+    parsed.attachments.sort((a, b) => {
+      const scoreA = getDocumentPriorityScore(a.url, a.label);
+      const scoreB = getDocumentPriorityScore(b.url, b.label);
+      return scoreB - scoreA;
+    });
+
     return {
       url: targetUrl,
       finalUrl,
@@ -760,6 +884,7 @@ export class LightpandaService {
       keywordHits: parsed.keywordHits,
       sessionCookieHeader,
       basicAuthHeader,
+      discoveredSubpages,
     };
   }
 

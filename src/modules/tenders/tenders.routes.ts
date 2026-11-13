@@ -7,6 +7,7 @@ import { tenderIngestionService } from './tender-ingestion.service.js';
 import { claudeService } from '../llm/claude.service.js';
 import { TaskNameSchema, TenderExtractionSchema, TenderExtraction, TenderTimelineExtractionSchema, TenderTimelineExtraction } from '../llm/llm.schemas.js';
 import { authService } from '../auth/auth.service.js';
+import { getDocumentPriorityScore } from '../scraper/lightpanda.service.js';
 
 export const tendersRouter = Router();
 
@@ -216,16 +217,11 @@ tendersRouter.get('/procedures/:id', async (req: Request, res: Response) => {
       ? tender.campos_extraidos_json.cronograma_general
       : [];
 
-    // Si aún está vacío pero existe fecha límite principal, generar hito representativo
+    // Si aún está vacío pero existe fecha límite principal, generar ÚNICAMENTE el hito de límite de presentación.
+    // NUNCA inventar "Publicación de Convocatoria" con created_at porque es la fecha de inserción en el sistema
+    // y genera inconsistencias (ej. publicación el 13/11 y recepción el 09/11).
     if (effectiveCronograma.length === 0 && tender.fecha_limite) {
       effectiveCronograma = [
-        {
-          evento: 'Publicación de Convocatoria',
-          fecha: toIsoDateOnly(tender.created_at) || new Date().toISOString().slice(0, 10),
-          hora: '09:00 hrs',
-          lugar: 'Portal Oficial',
-          estado: 'completado',
-        },
         {
           evento: 'Límite de Presentación de Propuestas',
           fecha: toIsoDateOnly(tender.fecha_limite) || '',
@@ -234,6 +230,18 @@ tendersRouter.get('/procedures/:id', async (req: Request, res: Response) => {
           estado: 'proximo',
         },
       ];
+    }
+
+    // Ordenar cronograma estrictamente de forma cronológica por fecha
+    if (Array.isArray(effectiveCronograma) && effectiveCronograma.length > 1) {
+      effectiveCronograma = [...effectiveCronograma].sort((a: any, b: any) => {
+        const timeA = a?.fecha ? new Date(a.fecha).getTime() : 0;
+        const timeB = b?.fecha ? new Date(b.fecha).getTime() : 0;
+        if (!isNaN(timeA) && !isNaN(timeB) && timeA > 0 && timeB > 0) {
+          return timeA - timeB;
+        }
+        return 0;
+      });
     }
 
     // Requisitos indispensables combinados
@@ -251,6 +259,13 @@ tendersRouter.get('/procedures/:id', async (req: Request, res: Response) => {
       [tenderId]
     );
 
+    // Ordenar documentos dando máxima prioridad a Convocatoria y Bases sobre diferimientos o fallos
+    const sortedDocs = [...(docsRes.rows || [])].sort((a: any, b: any) => {
+      const scoreA = getDocumentPriorityScore(a.source_url || '', a.file_name || '');
+      const scoreB = getDocumentPriorityScore(b.source_url || '', b.file_name || '');
+      return scoreB - scoreA;
+    });
+
     const titleReal = proc.titulo_objeto && proc.titulo_objeto !== 'Procedimiento sin título' && proc.titulo_objeto !== proc.numero_procedimiento
       ? proc.titulo_objeto
       : tender.titulo || proc.numero_procedimiento || 'Licitación Pública';
@@ -265,14 +280,14 @@ tendersRouter.get('/procedures/:id', async (req: Request, res: Response) => {
       requisitos_clave: effectiveRequisitos,
       sintesis_claude: proc.sintesis_claude || tender.sintesis_claude,
       parent_tender: tender,
-      parent_documents: docsRes.rows,
+      parent_documents: sortedDocs,
     };
 
     res.json({
       ok: true,
       procedure: enhancedProc,
       tender,
-      documents: docsRes.rows,
+      documents: sortedDocs,
     });
   } catch (err: any) {
     res.status(500).json({
