@@ -115,13 +115,15 @@ export class DocumentProcessorService {
 
     fs.writeFileSync(localPath, buffer);
 
-    // Caché de OCR: si este mismo archivo exacto (mismo hash SHA-256) ya fue procesado con éxito antes, reutilizar su texto OCR
+    // Caché de OCR: si este mismo archivo exacto (mismo hash SHA-256) ya fue procesado con éxito antes con un método OCR real, reutilizar su texto OCR
     if (ocrMode === 'auto') {
       try {
         const cachedDoc = await db.query(
           `SELECT metodo_extraccion, paginas_procesadas, texto_extraido
            FROM tender_documents
-           WHERE local_path = $1 AND LENGTH(texto_extraido) > 250
+           WHERE local_path = $1 
+             AND LENGTH(texto_extraido) > 400
+             AND metodo_extraccion IN ('surya_ocr', 'tesseract_ocr', 'vision_ocr', 'surya_hybrid_pdf')
            ORDER BY id DESC LIMIT 1`,
           [localPath]
         );
