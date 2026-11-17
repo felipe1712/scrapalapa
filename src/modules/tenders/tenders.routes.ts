@@ -277,10 +277,20 @@ tendersRouter.get('/procedures/:id', async (req: Request, res: Response) => {
       [tenderId]
     );
 
-    // Ordenar documentos dando máxima prioridad a Convocatoria y Bases sobre diferimientos o fallos
+    // Ordenar documentos dando máxima prioridad a Convocatoria y Bases sobre diferimientos o fallos,
+    // y dando prioridad especial a los documentos que pertenezcan al expediente específico de este procedimiento
+    const procExpClean = (proc.numero_procedimiento || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const sortedDocs = [...(docsRes.rows || [])].sort((a: any, b: any) => {
-      const scoreA = getDocumentPriorityScore(a.source_url || '', a.file_name || '');
-      const scoreB = getDocumentPriorityScore(b.source_url || '', b.file_name || '');
+      let scoreA = getDocumentPriorityScore(a.source_url || '', a.file_name || '');
+      let scoreB = getDocumentPriorityScore(b.source_url || '', b.file_name || '');
+
+      if (procExpClean.length >= 4) {
+        const normA = `${a.source_url || ''} ${a.file_name || ''}`.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const normB = `${b.source_url || ''} ${b.file_name || ''}`.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (normA.includes(procExpClean)) scoreA += 500;
+        if (normB.includes(procExpClean)) scoreB += 500;
+      }
+
       return scoreB - scoreA;
     });
 
@@ -714,13 +724,48 @@ tendersRouter.get('/documents/:docId/download', async (req: Request, res: Respon
       headerStr.startsWith('<?xml');
 
     if (isActuallyHtml) {
-      // Si el archivo en disco es HTML pero se catalogó como PDF, NUNCA enviarlo con application/pdf
-      // porque Chrome falla con "No se pudo cargar el documento PDF".
-      // Redirigir al portal oficial original si existe; si no, servirlo como HTML con iframe permitido.
-      if (doc.source_url && doc.source_url.startsWith('http')) {
-        return res.redirect(doc.source_url);
+      // 1. Si el archivo en disco es HTML (ej. subpágina intermedia de gob.mx), buscar el enlace al PDF auténtico
+      // dentro de ese HTML, descargarlo en caliente y servir el binario legítimo.
+      try {
+        const htmlContent = fs.readFileSync(doc.local_path, 'utf-8');
+        const pdfMatch = htmlContent.match(/href=["'](https?:\/\/[^"']+\.pdf(?:\?[^"']*)?|\/cms\/uploads\/[^"']+\.pdf(?:\?[^"']*)?)["']/i);
+        if (pdfMatch) {
+          const realPdfUrl = new URL(pdfMatch[1], doc.source_url || 'https://www.gob.mx').toString();
+          const pdfRes = await fetch(realPdfUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            },
+            signal: AbortSignal.timeout(25000),
+          });
+          if (pdfRes.ok) {
+            const buf = Buffer.from(await pdfRes.arrayBuffer());
+            if (buf.length > 500 && buf.subarray(0, 4).toString('ascii') === '%PDF') {
+              // Reemplazar el archivo HTML en disco por el PDF auténtico para sanar la base de datos
+              try { fs.writeFileSync(doc.local_path, buf); } catch {}
+              try {
+                await db.query('UPDATE tender_documents SET file_size_bytes = $1 WHERE id = $2', [buf.length, docId]);
+              } catch {}
+
+              const forceAttachment = req.query.download === '1';
+              const dispositionType = forceAttachment ? 'attachment' : 'inline';
+              res.setHeader('Content-Type', 'application/pdf');
+              res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+              res.setHeader(
+                'Content-Disposition',
+                `${dispositionType}; filename="${encodeURIComponent(realPdfUrl.split('/').pop() || doc.file_name)}"`
+              );
+              return res.send(buf);
+            }
+          }
+        }
+      } catch {
+        // Fallback a servir HTML
       }
+
+      // 2. Si no contiene PDF o falló la descarga, servir el HTML directamente con SAMEORIGIN de nuestro dominio.
+      // NUNCA redirigir a gob.mx porque gob.mx bloquea iframes en Firefox y Chrome (X-Frame-Options).
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('X-Frame-Options', 'SAMEORIGIN');
       res.setHeader('Content-Disposition', 'inline');
       const stream = fs.createReadStream(doc.local_path);
       stream.pipe(res);

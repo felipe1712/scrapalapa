@@ -211,8 +211,25 @@ function analyzeHtmlWithKeywords(
   keywordHits: KeywordHit[];
   candidateDetailUrls: { url: string; matchedKeywords: string[]; snippet: string }[];
 } {
-  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-  const title = titleMatch ? titleMatch[1].replace(/\s+/g, ' ').trim() : baseUrl;
+  const h1Match = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+  let title = '';
+  if (h1Match) {
+    title = h1Match[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  if (!title || title.length < 5) {
+    const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    title = titleMatch ? titleMatch[1].replace(/\s+/g, ' ').trim() : baseUrl;
+  }
+  // Decodificar entidades HTML comunes
+  title = title
+    .replace(/&uacute;/gi, 'ú')
+    .replace(/&oacute;/gi, 'ó')
+    .replace(/&aacute;/gi, 'á')
+    .replace(/&eacute;/gi, 'é')
+    .replace(/&iacute;/gi, 'í')
+    .replace(/&ntilde;/gi, 'ñ')
+    .replace(/&quot;/gi, '"')
+    .replace(/&amp;/gi, '&');
 
   const cleanHtmlForBlocks = html
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
@@ -247,9 +264,13 @@ function analyzeHtmlWithKeywords(
         const resolved = new URL(rawHref, baseUrl).toString();
         const docType = detectDocumentType(resolved, '', rawLabel);
         if (docType) {
+          const filenameFromUrl = decodeURIComponent(resolved.split('?')[0].split('/').pop() || `Documento.${docType}`);
+          const isGenericLabel = !rawLabel || /^(descarga|descargar|ver|bajar|archivo|pdf|click|aqui|consultar)$/i.test(rawLabel.trim());
+          const displayLabel = isGenericLabel ? filenameFromUrl : rawLabel;
+
           docs.push({
             url: resolved,
-            label: rawLabel || decodeURIComponent(resolved.split('/').pop() || `Documento.${docType}`),
+            label: displayLabel,
             fileType: docType,
           });
         } else {

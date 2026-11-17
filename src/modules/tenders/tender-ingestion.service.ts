@@ -235,8 +235,15 @@ export class TenderIngestionService {
         return scoreB - scoreA;
       });
 
+      // Si el portal contiene múltiples subpáginas/convocatorias (ej. INDAABIN con varias licitaciones),
+      // ampliar el límite de descarga hasta 20 para traer las bases y anexos de todas las convocatorias
+      const effectiveMaxAttachments =
+        pageData.discoveredSubpages && pageData.discoveredSubpages.length > 1
+          ? Math.max(maxAttachments, Math.min(20, pageData.attachments.length))
+          : maxAttachments;
+
       const attachmentsToProcess = processAttachments
-        ? candidateAttachments.slice(0, maxAttachments)
+        ? candidateAttachments.slice(0, effectiveMaxAttachments)
         : pageData.isDirectDocumentUrl
           ? candidateAttachments.slice(0, 1)
           : [];
