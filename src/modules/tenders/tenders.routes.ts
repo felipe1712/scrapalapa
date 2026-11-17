@@ -8,6 +8,7 @@ import { claudeService } from '../llm/claude.service.js';
 import { TaskNameSchema, TenderExtractionSchema, TenderExtraction, TenderTimelineExtractionSchema, TenderTimelineExtraction } from '../llm/llm.schemas.js';
 import { authService } from '../auth/auth.service.js';
 import { getDocumentPriorityScore } from '../scraper/lightpanda.service.js';
+import { documentProcessorService } from '../scraper/document-processor.service.js';
 
 export const tendersRouter = Router();
 
@@ -326,6 +327,70 @@ tendersRouter.get('/procedures/:id', async (req: Request, res: Response) => {
 });
 
 /**
+ * Asegura que los documentos PDF/Word adjuntos a una licitación tengan texto extraído con OCR.
+ * Si están vacíos, son muy cortos (<300 caracteres) o contienen errores de parseo,
+ * lee el binario del archivo local y ejecuta el procesamiento OCR (Claude Vision OCR / Tesseract / Surya),
+ * persistiendo el texto resultante en la base de datos PostgreSQL.
+ */
+async function ensureDocumentsOcrText(tenderId: number): Promise<string> {
+  const docsRes = await db.query(
+    'SELECT id, file_name, file_type, local_path, texto_extraido FROM tender_documents WHERE tender_id = $1 ORDER BY id ASC',
+    [tenderId]
+  );
+
+  const texts: string[] = [];
+
+  for (const doc of docsRes.rows) {
+    let text = (doc.texto_extraido || '').trim();
+    const needsOcr =
+      !text ||
+      text.length < 300 ||
+      text.includes('[Error') ||
+      text.includes('pdfParse is not a function');
+
+    if (needsOcr && doc.local_path && fs.existsSync(doc.local_path)) {
+      try {
+        const fileBuffer = fs.readFileSync(doc.local_path);
+        if (fileBuffer.length > 500) {
+          console.log(`[OCR On-Demand] Procesando OCR en documento #${doc.id} (${doc.file_name}, ${fileBuffer.length} bytes)...`);
+          const processed = await documentProcessorService.processDocumentBuffer(
+            fileBuffer,
+            doc.file_name,
+            doc.local_path,
+            'auto'
+          );
+          if (processed && processed.extractedText && processed.extractedText.trim().length > 50) {
+            text = processed.extractedText.trim();
+            await db.query(
+              `UPDATE tender_documents 
+               SET texto_extraido = $1, metodo_extraccion = $2, paginas_procesadas = $3, updated_at = NOW() 
+               WHERE id = $4`,
+              [text, processed.extractionMethod, processed.pagesProcessed, doc.id]
+            );
+          }
+        }
+      } catch (err: any) {
+        console.warn(`[OCR On-Demand] Error al procesar doc #${doc.id}:`, err?.message);
+      }
+    }
+
+    if (text && text.length > 30) {
+      texts.push(`=== DOCUMENTO: ${doc.file_name} ===\n${text}`);
+    }
+  }
+
+  const combined = texts.join('\n\n');
+  if (combined.length > 100) {
+    await db.query(
+      `UPDATE tenders SET texto_documentos_ocr = $1, updated_at = NOW() WHERE id = $2`,
+      [combined, tenderId]
+    );
+  }
+
+  return combined;
+}
+
+/**
  * GET /api/tenders/procedures/:id/raw-text
  * Devuelve el texto íntegro leído por OCR o por Lightpanda DOM para auditoría.
  * NUNCA falla si no hay PDF, hace fallback al texto de la página web.
@@ -349,6 +414,9 @@ tendersRouter.get('/procedures/:id/raw-text', async (req: Request, res: Response
       res.status(404).json({ ok: false, message: 'Procedimiento no encontrado.' });
       return;
     }
+
+    // Asegurar que cualquier documento en disco tenga OCR ejecutado
+    await ensureDocumentsOcrText(tenderId);
 
     // 1. Intentar obtener el texto extraído del documento PDF/Word más representativo
     const docRes = await db.query(
@@ -437,16 +505,10 @@ tendersRouter.post('/procedures/:id/extract-timeline', async (req: Request, res:
 
     const t = tenderRes.rows[0];
 
-    // Recuperar también el texto extraído de todos los documentos y anexos vinculados a esta licitación
-    const docsRes = await db.query(
-      'SELECT file_name, texto_extraido FROM tender_documents WHERE tender_id = $1 AND LENGTH(texto_extraido) > 10',
-      [tenderId]
-    );
-    const docsTexts = (docsRes.rows || [])
-      .map((d: any) => `=== DOCUMENTO ADJUNTO: ${d.file_name} ===\n${d.texto_extraido}`)
-      .join('\n\n');
+    // Asegurar que los documentos adjuntos tengan OCR procesado
+    const docsTexts = await ensureDocumentsOcrText(tenderId);
 
-    const sourceText = [t.texto_documentos_ocr, docsTexts, t.contenido_pagina_texto, t.sintesis_claude]
+    const sourceText = [docsTexts, t.texto_documentos_ocr, t.contenido_pagina_texto, t.sintesis_claude]
       .filter(Boolean)
       .join('\n\n');
 
@@ -456,9 +518,11 @@ tendersRouter.post('/procedures/:id/extract-timeline', async (req: Request, res:
     }
 
     const extractionPrompt =
-      `A partir del siguiente texto oficial de la licitación (${t.titulo || t.source_url}), extrae EXHAUSTIVAMENTE el calendario o cronograma de todos los trámites y actos legales del procedimiento (por ejemplo: Publicación de Convocatoria, Visita a Instalaciones, Junta de Aclaraciones, Presentación y Apertura de Proposiciones Técnicas y Económicas, Dictamen / Fallo, Firma de Contrato).\n` +
-      `Si alguna fecha no se indica explícitamente pero se menciona un plazo relativo (ej. '10 días posteriores al fallo'), anótalo en el campo 'hora' o 'lugar'.\n\n` +
-      sourceText;
+      `A partir del siguiente texto oficial de la licitación (${t.titulo || t.source_url}), extrae EXHAUSTIVAMENTE el cronograma o calendario de todos los actos y trámites legales del procedimiento (por ejemplo: Publicación de Convocatoria, Consulta de Convocatoria, Recepción de escritos de interés de participación, Visita a Instalaciones, Recepción de solicitudes de aclaración, Junta de Aclaraciones, Presentación y Apertura de Proposiciones Técnicas y Económicas, Dictamen o Fallo, Firma de Contrato).\n` +
+      `Si en el texto hay tablas de cronogramas, eventos, fechas y horarios (ej. '26 de octubre de 2026', '05 de noviembre de 2026 18:00 hrs', '06 de noviembre de 2026'), extrae CADA UNO de los eventos individualmente sin omitir ninguno.\n` +
+      `Convierte todas las fechas al formato estándar YYYY-MM-DD o DD/MM/YYYY. Si alguna hora está indicada, ponla en el campo 'hora'.\n` +
+      `También extrae los requisitos obligatorios o indispensables y el alcance/periodo de contratación.\n\n` +
+      sourceText.slice(0, 70000);
 
     const extractionRes = await claudeService.extractStructuredJson({
       tarea: 'completar_campos',
@@ -547,6 +611,98 @@ tendersRouter.post('/procedures/:id/extract-timeline', async (req: Request, res:
     });
   } catch (err: any) {
     res.status(500).json({ ok: false, message: err?.message || 'Error al extraer cronograma con IA.' });
+  }
+});
+
+/**
+ * POST /api/tenders/procedures/:id/regenerate-synthesis
+ * Regenera la síntesis ejecutiva del procedimiento usando Claude IA con el texto OCR completo.
+ */
+tendersRouter.post('/procedures/:id/regenerate-synthesis', async (req: Request, res: Response) => {
+  const rawId = String(req.params.id || '');
+  const procId = Number(rawId);
+
+  try {
+    let tenderId = 0;
+    let procedureId = 0;
+
+    if (rawId.startsWith('virtual-') || Number.isNaN(procId)) {
+      tenderId = Number(rawId.replace('virtual-', ''));
+    } else {
+      const pRes = await db.query('SELECT id, tender_id FROM tender_procedures WHERE id = $1 LIMIT 1', [procId]);
+      if (pRes.rowCount && pRes.rowCount > 0) {
+        procedureId = pRes.rows[0].id;
+        tenderId = pRes.rows[0].tender_id;
+      }
+    }
+
+    if (!tenderId) {
+      res.status(404).json({ ok: false, message: 'Procedimiento no encontrado.' });
+      return;
+    }
+
+    const docsTexts = await ensureDocumentsOcrText(tenderId);
+
+    const tenderRes = await db.query(
+      'SELECT id, titulo, source_url, contenido_pagina_texto, texto_documentos_ocr FROM tenders WHERE id = $1 LIMIT 1',
+      [tenderId]
+    );
+
+    if (tenderRes.rowCount === 0) {
+      res.status(404).json({ ok: false, message: 'Licitación no encontrada' });
+      return;
+    }
+
+    const t = tenderRes.rows[0];
+    const sourceText = [docsTexts, t.texto_documentos_ocr, t.contenido_pagina_texto]
+      .filter(Boolean)
+      .join('\n\n');
+
+    if (!sourceText || sourceText.length < 30) {
+      res.status(400).json({ ok: false, message: 'No hay texto suficiente en el expediente para generar la síntesis.' });
+      return;
+    }
+
+    const summaryPrompt =
+      `Genera una síntesis ejecutiva clara, profesional y concisa para la siguiente licitación (${t.titulo || t.source_url}).\n` +
+      `Describe: 1) Objeto o propósito de la contratación, 2) Entidad convocante, 3) Plazos y fechas críticas, 4) Requisitos o condiciones indispensables.\n\n` +
+      sourceText.slice(0, 50000);
+
+    const claudeRes = await claudeService.generateTaskText({
+      tarea: 'resumen_licitacion',
+      userPrompt: summaryPrompt,
+      tenderId: `TND-${tenderId}`,
+      documentId: 'SYNTHESIS-REGEN',
+    });
+
+    if (!claudeRes.ok || !claudeRes.data) {
+      throw new Error(claudeRes.fallbackReason || 'No se pudo generar la síntesis con IA.');
+    }
+
+    const newSynthesis = claudeRes.data.trim();
+
+    await db.query('UPDATE tenders SET sintesis_claude = $1, updated_at = NOW() WHERE id = $2', [
+      newSynthesis,
+      tenderId,
+    ]);
+
+    if (procedureId > 0) {
+      await db.query(
+        'UPDATE tender_procedures SET resumen_objeto = COALESCE(NULLIF(resumen_objeto, \'\'), $1), updated_at = NOW() WHERE id = $2',
+        [newSynthesis.slice(0, 1000), procedureId]
+      );
+    }
+
+    res.json({
+      ok: true,
+      message: 'Síntesis ejecutiva regenerada con éxito.',
+      sintesis_claude: newSynthesis,
+    });
+  } catch (err: any) {
+    res.status(500).json({
+      ok: false,
+      message: err?.message || 'Error al regenerar la síntesis ejecutiva.',
+    });
   }
 });
 

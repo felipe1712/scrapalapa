@@ -465,14 +465,14 @@
                                         </div>
                                     </div>
                                     <div class="d-flex flex-wrap gap-2 align-items-center">
-                                        <button type="button" id="btnViewRawOcr" class="btn btn-sm btn-outline-dark" title="Inspeccionar texto íntegro leído por OCR o por navegador">
-                                            <i class="bi bi-file-earmark-text me-1"></i> Ver Texto OCR (Raw)
+                                        <button type="button" id="btnViewRawOcr" class="btn btn-sm btn-outline-dark" title="Ver texto extraído">
+                                            <i class="bi bi-file-earmark-text me-1"></i> Ver Texto
                                         </button>
-                                        <button type="button" id="btnReanalyzeProc" class="btn btn-sm btn-outline-primary" title="Re-analizar con IA">
+                                        <button type="button" id="btnReanalyzeProc" class="btn btn-sm btn-outline-primary" title="Regenerar síntesis ejecutiva con IA">
                                             <i class="bi bi-arrow-repeat me-1"></i> Regenerar Síntesis
                                         </button>
                                         <button type="button" id="btnToggleViewerCard" class="btn btn-sm btn-theme">
-                                            <i class="bi bi-eye me-1"></i> Ver Documento PDF
+                                            <i class="bi bi-eye me-1"></i> Ver Documentos
                                         </button>
                                     </div>
                                 </div>
@@ -502,8 +502,8 @@
                                                 <i class="bi bi-table me-1"></i> Tabla
                                             </button>
                                         </div>
-                                        <button type="button" id="btnExtractTimelineIa" class="btn btn-sm btn-outline-primary" title="Re-analizar texto y extraer fechas con Claude">
-                                            <i class="bi bi-lightning-charge me-1"></i> Extraer Fechas con IA
+                                        <button type="button" id="btnExtractTimelineIa" class="btn btn-sm btn-outline-primary" title="Extraer fechas del cronograma">
+                                            <i class="bi bi-calendar-event me-1"></i> Extraer Fechas
                                         </button>
                                     </div>
                                 </div>
@@ -515,7 +515,7 @@
                                     <div class="fw-bold text-dark small mb-1">No se detectó un cronograma de fechas específico en el extracto inicial.</div>
                                     <div class="small text-secondary mb-2">Puedes extraer automáticamente los actos con Claude haciendo clic en el botón de abajo.</div>
                                     <button type="button" class="btn btn-sm btn-primary" onclick="document.getElementById('btnExtractTimelineIa')?.click()">
-                                        <i class="bi bi-lightning-charge me-1"></i> Analizar y Extraer Fechas Ahora
+                                        <i class="bi bi-calendar-event me-1"></i> Extraer Fechas
                                     </button>
                                 </div>
 

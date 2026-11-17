@@ -257,10 +257,13 @@ export class DocumentProcessorService {
     ocrMode: 'auto' | 'forzar_surya'
   ): Promise<ProcessedDocumentResult> {
     const pythonCandidates = [
-      process.env.SURYA_PYTHON_BIN || process.env.SURYA_PYTHON_PATH || '/var/www/scrapalapa/.venv-surya/bin/python',
+      process.env.SURYA_PYTHON_BIN,
+      process.env.SURYA_PYTHON_PATH,
+      '/var/www/scrapalapa/.venv-surya/bin/python',
+      '/var/www/scrapalapa/.venv/bin/python',
       'python3',
       'python',
-    ];
+    ].filter(Boolean) as string[];
 
     let renderedPagesB64: Array<{ page: number; media_type: 'image/jpeg'; data: string }> = [];
     let detectedPages = 1;
@@ -305,7 +308,7 @@ export class DocumentProcessorService {
     if (renderedPagesB64.length > 0 || localExtractedText.length < 300) {
       const visionOcrText = await claudeService.extractTextFromScannedImages({
         renderedPages: renderedPagesB64,
-        pdfBufferFallback: buffer,
+        pdfBufferFallback: detectedPages <= 90 ? buffer : undefined,
         fileName,
       });
 
@@ -339,9 +342,23 @@ export class DocumentProcessorService {
     // 3. Fallback en Node.js con pdf-parse para PDFs con capa de texto cuando Python no está disponible
     try {
       const pdfParseModule: any = await import('pdf-parse');
-      const pdfParse = pdfParseModule.default || pdfParseModule;
-      const data = await pdfParse(buffer);
-      const parsedText = (data.text || '').trim();
+      let parsedText = '';
+      let numPages = detectedPages || 1;
+      if (typeof pdfParseModule === 'function') {
+        const data = await pdfParseModule(buffer);
+        parsedText = (data?.text || '').trim();
+        numPages = Number(data?.numpages || numPages);
+      } else if (pdfParseModule.PDFParse) {
+        const parser = new pdfParseModule.PDFParse(new Uint8Array(buffer));
+        await parser.load();
+        const textRes = await parser.getText();
+        parsedText = (typeof textRes === 'string' ? textRes : (textRes?.text || '')).trim();
+        numPages = Number(textRes?.total || numPages);
+      } else if (pdfParseModule.default && typeof pdfParseModule.default === 'function') {
+        const data = await pdfParseModule.default(buffer);
+        parsedText = (data?.text || '').trim();
+        numPages = Number(data?.numpages || numPages);
+      }
       return {
         fileName,
         sourceUrl,
@@ -349,7 +366,7 @@ export class DocumentProcessorService {
         fileSizeBytes: buffer.length,
         localPath,
         extractionMethod: 'pdf_text_parser',
-        pagesProcessed: Number(data.numpages || detectedPages || 1),
+        pagesProcessed: numPages,
         extractedText: parsedText,
       };
     } catch (err: any) {

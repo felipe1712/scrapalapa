@@ -674,7 +674,7 @@
       state.activeDocId = null;
       if (selectWrapper) selectWrapper.classList.add('d-none');
       if (btnToggleViewer) {
-        btnToggleViewer.innerHTML = '<i class="bi bi-eye me-1"></i> Ver Documento PDF';
+        btnToggleViewer.innerHTML = '<i class="bi bi-eye me-1"></i> Ver Documentos';
       }
       if (titleEl) titleEl.textContent = parentTender.titulo || 'Expediente Web';
       if (metaEl) metaEl.textContent = 'Este registro proviene de contenido web directo o aún no tiene PDF descargado.';
@@ -702,7 +702,7 @@
     if (btnToggleViewer) {
       btnToggleViewer.innerHTML = sortedDocs.length > 1
         ? `<i class="bi bi-file-earmark-pdf-fill me-1"></i> Ver Documentos (${sortedDocs.length})`
-        : `<i class="bi bi-eye me-1"></i> Ver Documento PDF`;
+        : `<i class="bi bi-eye me-1"></i> Ver Documentos`;
     }
 
     function renderActiveDocument(doc) {
@@ -792,11 +792,11 @@
     const origHtml = btn ? btn.innerHTML : '';
     if (btn) {
       btn.disabled = true;
-      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Analizando fechas...';
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Extrayendo...';
     }
 
     try {
-      showAlert('Analizando el documento con Claude para extraer todos los actos del cronograma...', 'info');
+      showAlert('Extrayendo fechas del cronograma con Claude...', 'info');
       const res = await fetch(`/api/tenders/procedures/${state.activeProcedureId}/extract-timeline`, {
         method: 'POST',
       });
@@ -814,6 +814,52 @@
       await loadTendersTree(true);
     } catch (err) {
       showAlert(`Error en extracción de cronograma: ${err.message}`, 'danger');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
+      }
+    }
+  }
+
+  // Regenerar Síntesis Ejecutiva con Claude IA
+  async function regenerateSynthesis() {
+    if (!state.activeProcedureId) {
+      showAlert('Selecciona una licitación primero.', 'warning');
+      return;
+    }
+
+    const btn = document.getElementById('btnReanalyzeProc');
+    const origHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Sintetizando...';
+    }
+
+    try {
+      showAlert('Regenerando síntesis ejecutiva con Claude...', 'info');
+      const res = await fetch(`/api/tenders/procedures/${state.activeProcedureId}/regenerate-synthesis`, {
+        method: 'POST',
+      });
+      const data = await safeParseJson(res);
+
+      if (!data.ok) {
+        throw new Error(data.message || 'Error al regenerar síntesis');
+      }
+
+      showAlert('¡Síntesis ejecutiva actualizada con éxito!', 'success');
+
+      // Actualizar contenedor de síntesis en el DOM
+      const synthEl = document.getElementById('detailClaudeSynthesis');
+      if (synthEl && data.sintesis_claude) {
+        synthEl.textContent = data.sintesis_claude;
+      }
+
+      // Invalidar cache y refrescar datos
+      state.cachedProcedures.delete(state.activeProcedureId);
+      await selectProcedure(state.activeProcedureId);
+    } catch (err) {
+      showAlert(`Error al regenerar síntesis: ${err.message}`, 'danger');
     } finally {
       if (btn) {
         btn.disabled = false;
@@ -985,9 +1031,9 @@
     // Diagnostics Button
     document.getElementById('btnOcrDiagnostics')?.addEventListener('click', runOcrDiagnostics);
 
-    // Extract Timeline Button
+    // Extract Timeline Button & Regenerate Synthesis
     document.getElementById('btnExtractTimelineIa')?.addEventListener('click', extractTimelineWithIa);
-    document.getElementById('btnReanalyzeProc')?.addEventListener('click', extractTimelineWithIa);
+    document.getElementById('btnReanalyzeProc')?.addEventListener('click', regenerateSynthesis);
 
     // Timeline View Switchers
     const btnTimelineCards = document.getElementById('btnTimelineViewCards');
