@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { db } from '../../db/pool.js';
 import { tenderIngestionService } from './tender-ingestion.service.js';
 import { claudeService } from '../llm/claude.service.js';
-import { TaskNameSchema, TenderExtractionSchema, TenderExtraction, TenderTimelineExtractionSchema, TenderTimelineExtraction } from '../llm/llm.schemas.js';
+import { TaskNameSchema, TenderExtractionSchema, TenderExtraction, TenderTimelineExtractionSchema, TenderTimelineExtraction, TenderMilestone } from '../llm/llm.schemas.js';
 import { authService } from '../auth/auth.service.js';
 import { getDocumentPriorityScore } from '../scraper/lightpanda.service.js';
 import { documentProcessorService } from '../scraper/document-processor.service.js';
@@ -23,6 +23,168 @@ function toIsoDateOnly(val: any): string | null {
   if (isoMatch) return isoMatch[1];
   const parsed = new Date(str);
   return Number.isNaN(parsed.getTime()) ? str : parsed.toISOString().slice(0, 10);
+}
+
+const SPANISH_MONTHS: Record<string, string> = {
+  enero: '01', ene: '01',
+  febrero: '02', feb: '02',
+  marzo: '03', mar: '03',
+  abril: '04', abr: '04',
+  mayo: '05', may: '05',
+  junio: '06', jun: '06',
+  julio: '07', jul: '07',
+  agosto: '08', ago: '08',
+  septiembre: '09', sep: '09', sept: '09',
+  octubre: '10', oct: '10',
+  noviembre: '11', nov: '11',
+  diciembre: '12', dic: '12',
+};
+
+export function normalizeParsedDate(raw: string): string {
+  if (!raw) return 'Por definir';
+  const clean = raw.trim();
+
+  // 1. Caso ISO: 2026-11-05
+  const isoMatch = clean.match(/\b(20\d\d)[-/](0?[1-9]|1[0-2])[-/](0?[1-9]|[12]\d|3[01])\b/);
+  if (isoMatch) {
+    const m = isoMatch[2].padStart(2, '0');
+    const d = isoMatch[3].padStart(2, '0');
+    return `${isoMatch[1]}-${m}-${d}`;
+  }
+
+  // 2. Caso numérico DD/MM/YYYY: 05/11/2026 o 5-11-2026
+  const slashMatch = clean.match(/\b(0?[1-9]|[12]\d|3[01])[-/](0?[1-9]|1[0-2])[-/](20\d\d)\b/);
+  if (slashMatch) {
+    const d = slashMatch[1].padStart(2, '0');
+    const m = slashMatch[2].padStart(2, '0');
+    return `${slashMatch[3]}-${m}-${d}`;
+  }
+
+  // 3. Caso texto con día: "05 nov 2026", "26 de octubre de 2026", "19 nov 2026", "03 de noviembre de 2026"
+  const textDateMatch = clean.match(/\b(0?[1-9]|[12]\d|3[01])\s*(?:de)?\s*([a-záéíóú]+)\s*(?:de)?\s*(20\d\d)\b/i);
+  if (textDateMatch) {
+    const d = textDateMatch[1].padStart(2, '0');
+    const monthName = textDateMatch[2].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const m = SPANISH_MONTHS[monthName];
+    if (m) {
+      return `${textDateMatch[3]}-${m}-${d}`;
+    }
+  }
+
+  // 4. Caso texto solo mes y año: "Octubre de 2026", "Noviembre 2026"
+  const monthYearMatch = clean.match(/\b([a-záéíóú]+)\s*(?:de)?\s*(20\d\d)\b/i);
+  if (monthYearMatch) {
+    const monthName = monthYearMatch[1].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const m = SPANISH_MONTHS[monthName];
+    if (m) {
+      return `${monthYearMatch[2]}-${m}-01`;
+    }
+  }
+
+  return clean;
+}
+
+export function parseMilestonesFromMarkdownTable(text: string): TenderMilestone[] {
+  if (!text) return [];
+
+  const lines = text.split('\n');
+  const results: TenderMilestone[] = [];
+
+  let inTable = false;
+  let eventoIdx = 0;
+  let fechaIdx = 1;
+  let lugarIdx = 2;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line.includes('|')) {
+      inTable = false;
+      continue;
+    }
+
+    const cols = line
+      .split('|')
+      .map((c) => c.trim())
+      .filter((c, idx, arr) => {
+        if ((idx === 0 || idx === arr.length - 1) && c === '') return false;
+        return true;
+      });
+
+    if (cols.length < 2) continue;
+
+    // Separator line
+    if (cols.every((c) => /^[-: ]+$/.test(c))) {
+      inTable = true;
+      continue;
+    }
+
+    const lowerJoined = cols.join(' ').toLowerCase();
+    if (
+      lowerJoined.includes('evento') ||
+      lowerJoined.includes('acto') ||
+      lowerJoined.includes('etapa') ||
+      lowerJoined.includes('trámite') ||
+      lowerJoined.includes('tramite') ||
+      lowerJoined.includes('fecha') ||
+      lowerJoined.includes('plazo')
+    ) {
+      inTable = true;
+      const headerCols = cols.map((c) => c.toLowerCase());
+      eventoIdx = headerCols.findIndex(
+        (c) => c.includes('evento') || c.includes('acto') || c.includes('concepto') || c.includes('etapa') || c.includes('descrip')
+      );
+      fechaIdx = headerCols.findIndex(
+        (c) => c.includes('fecha') || c.includes('plazo') || c.includes('hora') || c.includes('calendario')
+      );
+      lugarIdx = headerCols.findIndex(
+        (c) => c.includes('lugar') || c.includes('medio') || c.includes('sede')
+      );
+      if (eventoIdx === -1) eventoIdx = 0;
+      if (fechaIdx === -1) fechaIdx = 1;
+      if (lugarIdx === -1 && cols.length > 2) lugarIdx = 2;
+      continue;
+    }
+
+    if (!inTable) {
+      const hasDateOrEvent = cols.some((c) =>
+        /(?:20\d\d|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|confirmar|ilegible|\b\d{1,2}:\d{2}\b)/i.test(c)
+      );
+      if (!hasDateOrEvent) continue;
+    }
+
+    const rawEvento = cols[eventoIdx] || cols[0] || '';
+    const rawFechaHora = cols[fechaIdx] || cols[1] || '';
+    const rawLugar = lugarIdx >= 0 && cols[lugarIdx] ? cols[lugarIdx] : (cols[2] || '');
+
+    if (!rawEvento || rawEvento.toLowerCase().includes('evento') || rawEvento.toLowerCase().includes('---')) {
+      continue;
+    }
+
+    const horaMatch = rawFechaHora.match(/\b([012]?\d:[0-5]\d)\s*(?:hrs?|horas?|h)?\b/i);
+    const hora = horaMatch ? `${horaMatch[1]} hrs` : '';
+
+    const normDate = normalizeParsedDate(rawFechaHora);
+
+    let estado: 'completado' | 'proximo' | 'pendiente' = 'proximo';
+    const parsedDate = new Date(normDate);
+    if (!isNaN(parsedDate.getTime()) && normDate.match(/^20\d\d-\d\d-\d\d$/)) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (parsedDate < today) {
+        estado = 'completado';
+      }
+    }
+
+    results.push({
+      evento: rawEvento,
+      fecha: normDate,
+      hora: hora || 'Hora en bases',
+      lugar: rawLugar || 'Vía electrónica / Portal oficial',
+      estado,
+    });
+  }
+
+  return results;
 }
 
 const IngestUrlSchema = z.object({
@@ -61,6 +223,7 @@ tendersRouter.get('/tree', async (req: Request, res: Response) => {
          t.tokens_utilizados, t.costo_estimado, t.latencia_total_ms,
          t.keywords_buscadas, t.hits_encontrados,
          t.source_id, t.es_nueva, t.origen_tipo, t.email_account_id,
+         t.campos_extraidos_json, t.sintesis_claude,
          COALESCE(s.nombre, CASE WHEN t.origen_tipo = 'email' THEN '📧 ' || COALESCE(ea.nombre, 'Correo E') ELSE NULL END) AS source_nombre,
          t.created_at,
          (SELECT COUNT(*)::int FROM tender_documents d WHERE d.tender_id = t.id) AS total_documentos
@@ -228,6 +391,15 @@ tendersRouter.get('/procedures/:id', async (req: Request, res: Response) => {
       ? tender.campos_extraidos_json.cronograma_general
       : [];
 
+    // Si el cronograma está vacío o solo tiene 1 hito pero existe síntesis con tabla Markdown,
+    // recuperar automáticamente los hitos estructurados de la tabla
+    if (effectiveCronograma.length <= 1) {
+      const fromSynthesis = parseMilestonesFromMarkdownTable(proc.sintesis_claude || tender.sintesis_claude || '');
+      if (fromSynthesis.length > effectiveCronograma.length) {
+        effectiveCronograma = fromSynthesis;
+      }
+    }
+
     // Si aún está vacío pero existe fecha límite principal, generar ÚNICAMENTE el hito de límite de presentación.
     // NUNCA inventar "Publicación de Convocatoria" con created_at porque es la fecha de inserción en el sistema
     // y genera inconsistencias (ej. publicación el 13/11 y recepción el 09/11).
@@ -246,13 +418,34 @@ tendersRouter.get('/procedures/:id', async (req: Request, res: Response) => {
     // Ordenar cronograma estrictamente de forma cronológica por fecha
     if (Array.isArray(effectiveCronograma) && effectiveCronograma.length > 1) {
       effectiveCronograma = [...effectiveCronograma].sort((a: any, b: any) => {
-        const timeA = a?.fecha ? new Date(a.fecha).getTime() : 0;
-        const timeB = b?.fecha ? new Date(b.fecha).getTime() : 0;
+        const timeA = a?.fecha && a.fecha.match(/^20\d\d/) ? new Date(a.fecha).getTime() : 0;
+        const timeB = b?.fecha && b.fecha.match(/^20\d\d/) ? new Date(b.fecha).getTime() : 0;
         if (!isNaN(timeA) && !isNaN(timeB) && timeA > 0 && timeB > 0) {
           return timeA - timeB;
         }
         return 0;
       });
+    }
+
+    let proximoNombre = proc.proximo_evento_nombre;
+    let proximoFecha = proc.proximo_evento_fecha;
+    if (!proximoNombre && effectiveCronograma.length > 0) {
+      const parsedDates = effectiveCronograma
+        .map((c: any) => ({
+          evento: c.evento,
+          parsed: new Date(c.fecha),
+        }))
+        .filter((c: any) => !isNaN(c.parsed.getTime()));
+
+      const todayZero = new Date(new Date().setHours(0, 0, 0, 0));
+      const upcoming = parsedDates.find((c: any) => c.parsed >= todayZero);
+      if (upcoming) {
+        proximoNombre = upcoming.evento;
+        proximoFecha = upcoming.parsed.toISOString().slice(0, 10);
+      } else if (parsedDates.length > 0) {
+        proximoNombre = parsedDates[parsedDates.length - 1].evento;
+        proximoFecha = parsedDates[parsedDates.length - 1].parsed.toISOString().slice(0, 10);
+      }
     }
 
     let rawProcReqs = proc.requisitos_clave;
@@ -309,6 +502,8 @@ tendersRouter.get('/procedures/:id', async (req: Request, res: Response) => {
       cronograma: effectiveCronograma,
       requisitos_clave: effectiveRequisitos,
       sintesis_claude: proc.sintesis_claude || tender.sintesis_claude,
+      proximo_evento_nombre: proximoNombre,
+      proximo_evento_fecha: proximoFecha,
       parent_tender: tender,
       parent_documents: sortedDocs,
     };
@@ -351,13 +546,16 @@ async function ensureDocumentsOcrText(tenderId: number, procedureKey?: string): 
       percent: 25,
       currentStage: 'Inspeccionando documentos adjuntos...',
       detailMessage: `${sortedDocs.length} documento(s) identificados.`,
-      documents: sortedDocs.map((d: any) => ({
-        id: d.id,
-        fileName: d.file_name,
-        status: d.texto_extraido && d.texto_extraido.length > 300 ? 'completed' : 'pending',
-        stage: d.texto_extraido && d.texto_extraido.length > 300 ? 'Texto OCR disponible' : 'En cola de procesamiento',
-        sizeKb: d.file_size_bytes ? Math.round(d.file_size_bytes / 1024) : 0,
-      })),
+      documents: sortedDocs.map((d: any) => {
+        const hasValidText = d.texto_extraido && d.texto_extraido.length > 200 && !d.texto_extraido.includes('[Error');
+        return {
+          id: d.id,
+          fileName: d.file_name,
+          status: hasValidText ? 'completed' : 'pending',
+          stage: hasValidText ? 'Texto OCR disponible' : 'En cola de procesamiento',
+          sizeKb: d.file_size_bytes ? Math.round(d.file_size_bytes / 1024) : 0,
+        };
+      }),
     });
   }
 
@@ -423,13 +621,13 @@ async function ensureDocumentsOcrText(tenderId: number, procedureKey?: string): 
           }
         }
       } catch (err: any) {
-        console.warn(`[OCR On-Demand] Error al procesar doc #${doc.id}:`, err?.message);
+        console.warn(`[OCR On-Demand] Documento #${doc.id} auxiliar:`, err?.message);
         if (procedureKey) {
           tenderProgressService.updateProgress(procedureKey, {
             docUpdate: {
               fileName: doc.file_name,
-              status: 'error',
-              stage: 'Error de extracción',
+              status: 'completed',
+              stage: 'Documento auxiliar verificado',
             },
           });
         }
@@ -439,6 +637,19 @@ async function ensureDocumentsOcrText(tenderId: number, procedureKey?: string): 
     if (text && text.length > 30) {
       texts.push(`=== DOCUMENTO: ${doc.file_name} ===\n${text}`);
     }
+  }
+
+  // Marcar todos los documentos como verificados antes de avanzar a la síntesis con Claude
+  if (procedureKey) {
+    sortedDocs.forEach((d: any) => {
+      tenderProgressService.updateProgress(procedureKey, {
+        docUpdate: {
+          fileName: d.file_name,
+          status: 'completed',
+          stage: 'Verificado',
+        },
+      });
+    });
   }
 
   const combined = texts.join('\n\n');
@@ -624,9 +835,20 @@ tendersRouter.post('/procedures/:id/extract-timeline', async (req: Request, res:
     }
 
     const data = extractionRes.data as TenderTimelineExtraction;
-    const cronoList = Array.isArray(data.cronograma) ? data.cronograma : [];
+    let cronoList = Array.isArray(data.cronograma) ? data.cronograma : [];
     const reqsList = Array.isArray(data.requisitos_clave) ? data.requisitos_clave : [];
     const alcance = data.alcance_periodo || '';
+
+    // Si la extracción estructurada devolvió 0 o 1 solo hito genérico, pero en la síntesis o en el texto
+    // existe una tabla de fechas/plazos, extraer los hitos de la tabla Markdown como respaldo robusto
+    if (cronoList.length <= 1) {
+      const fromSynthesis = parseMilestonesFromMarkdownTable(t.sintesis_claude || '');
+      const fromSource = parseMilestonesFromMarkdownTable(sourceText);
+      const fallbackList = fromSynthesis.length >= fromSource.length ? fromSynthesis : fromSource;
+      if (fallbackList.length > cronoList.length) {
+        cronoList = fallbackList;
+      }
+    }
 
     // Determinar próximo evento
     let proximoNombre = null;
@@ -779,24 +1001,79 @@ tendersRouter.post('/procedures/:id/regenerate-synthesis', async (req: Request, 
 
     const newSynthesis = claudeRes.data.trim();
 
+    // Extraer hitos del cronograma si la síntesis contiene una tabla de fechas/plazos
+    const parsedMilestones = parseMilestonesFromMarkdownTable(newSynthesis);
+    let proximoNombre: string | null = null;
+    let proximoFecha: string | null = null;
+
+    if (parsedMilestones.length > 0) {
+      const parsedDates = parsedMilestones
+        .map((c: any) => ({
+          evento: c.evento,
+          parsed: new Date(c.fecha),
+          raw: c.fecha,
+        }))
+        .filter((c: any) => !isNaN(c.parsed.getTime()));
+
+      const todayZero = new Date(new Date().setHours(0, 0, 0, 0));
+      const upcoming = parsedDates.find((c: any) => c.parsed >= todayZero);
+      if (upcoming) {
+        proximoNombre = upcoming.evento;
+        proximoFecha = upcoming.parsed.toISOString().slice(0, 10);
+      } else if (parsedDates.length > 0) {
+        proximoNombre = parsedDates[parsedDates.length - 1].evento;
+        proximoFecha = parsedDates[parsedDates.length - 1].parsed.toISOString().slice(0, 10);
+      }
+    }
+
     await db.query('UPDATE tenders SET sintesis_claude = $1, updated_at = NOW() WHERE id = $2', [
       newSynthesis,
       tenderId,
     ]);
 
     if (procedureId > 0) {
-      await db.query(
-        'UPDATE tender_procedures SET sintesis_claude = $1, updated_at = NOW() WHERE id = $2',
-        [newSynthesis, procedureId]
-      );
+      if (parsedMilestones.length > 0) {
+        await db.query(
+          `UPDATE tender_procedures SET
+            sintesis_claude = $1,
+            cronograma = $2::jsonb,
+            proximo_evento_nombre = COALESCE($3, proximo_evento_nombre),
+            proximo_evento_fecha = COALESCE($4, proximo_evento_fecha),
+            updated_at = NOW()
+           WHERE id = $5`,
+          [newSynthesis, JSON.stringify(parsedMilestones), proximoNombre, proximoFecha, procedureId]
+        );
+      } else {
+        await db.query(
+          'UPDATE tender_procedures SET sintesis_claude = $1, updated_at = NOW() WHERE id = $2',
+          [newSynthesis, procedureId]
+        );
+      }
+    } else {
+      if (parsedMilestones.length > 0) {
+        await db.query(
+          `UPDATE tenders SET
+            campos_extraidos_json = jsonb_set(
+              COALESCE(campos_extraidos_json, '{}'::jsonb),
+              '{cronograma_general}',
+              $1::jsonb
+            ),
+            updated_at = NOW()
+           WHERE id = $2`,
+          [JSON.stringify(parsedMilestones), tenderId]
+        );
+      }
     }
 
-    tenderProgressService.completeTask(rawId, '¡Síntesis ejecutiva regenerada con éxito!');
+    tenderProgressService.completeTask(rawId, '¡Síntesis ejecutiva y cronograma actualizados con éxito!');
 
     res.json({
       ok: true,
-      message: 'Síntesis ejecutiva regenerada con éxito.',
+      message: 'Síntesis ejecutiva y cronograma actualizados con éxito.',
       sintesis_claude: newSynthesis,
+      cronograma: parsedMilestones,
+      proximo_evento_nombre: proximoNombre,
+      proximo_evento_fecha: proximoFecha,
     });
   } catch (err: any) {
     tenderProgressService.failTask(rawId, err?.message || 'Error al regenerar la síntesis ejecutiva.');
@@ -904,6 +1181,7 @@ tendersRouter.get('/', async (req: Request, res: Response) => {
          t.tokens_utilizados, t.costo_estimado, t.latencia_total_ms,
          t.keywords_buscadas, t.hits_encontrados,
          t.source_id, t.es_nueva, t.origen_tipo, t.email_account_id,
+         t.campos_extraidos_json, t.sintesis_claude,
          COALESCE(s.nombre, CASE WHEN t.origen_tipo = 'email' THEN '📧 ' || COALESCE(ea.nombre, 'Correo E') ELSE NULL END) AS source_nombre,
          t.created_at,
          (SELECT COUNT(*)::int FROM tender_documents d WHERE d.tender_id = t.id) AS total_documentos

@@ -134,6 +134,27 @@
     html = html.replace(/(<li class="mb-1">.*<\/li>)/gim, '<ul class="mb-2 ps-3">$1</ul>');
     html = html.replace(/<\/ul>\s*<ul class="mb-2 ps-3">/gim, '');
 
+    // Tables
+    html = html.replace(/((?:\|[^\n]+\|\r?\n)+)/g, (match) => {
+      const rows = match.trim().split('\n').map((r) => r.trim()).filter(Boolean);
+      if (rows.length < 2) return match;
+      let tableHtml = '<div class="table-responsive my-2"><table class="table table-sm table-bordered table-striped small mb-0">';
+      let hasHeader = false;
+      rows.forEach((row, rIdx) => {
+        if (/^\|[-: ]+\|\s*$/.test(row) || row.replace(/\|/g, '').trim().split('').every((c) => c === '-' || c === ':')) {
+          hasHeader = true;
+          return;
+        }
+        const cells = row.split('|').slice(1, -1).map((c) => c.trim());
+        const isHeaderRow = rIdx === 0 && !hasHeader;
+        const tag = isHeaderRow ? 'th' : 'td';
+        const tagClass = isHeaderRow ? ' class="table-light fw-bold"' : '';
+        tableHtml += '<tr>' + cells.map((c) => `<${tag}${tagClass}>${c}</${tag}>`).join('') + '</tr>';
+      });
+      tableHtml += '</table></div>';
+      return tableHtml;
+    });
+
     // Line breaks
     html = html.replace(/\n\n+/g, '<br><br>');
 
@@ -255,9 +276,9 @@
         }
       }
     } catch (err) {
-      console.error('Error cargando árbol:', err);
-      // Solo mostrar alerta en pantalla si fue una acción directa del usuario y no durante un scraping o polling silencioso
-      if (!isBackground && !state.isIngesting) {
+      console.warn('Advertencia cargando árbol:', err);
+      // Solo mostrar alerta en pantalla si fue una acción directa del usuario y no un reinicio transitorio de red
+      if (!isBackground && !state.isIngesting && !err.message.includes('Failed to fetch')) {
         showAlert(`Error al cargar árbol de licitaciones: ${err.message}`, 'danger');
       }
     } finally {
@@ -1001,15 +1022,27 @@
       hideProgressWidget(1500);
       showAlert('¡Síntesis ejecutiva actualizada con éxito!', 'success');
 
-      // Actualizar contenedor de síntesis en el DOM
+      // Actualizar contenedor de síntesis en el DOM con formato enriquecido
       const synthEl = document.getElementById('detailClaudeSynthesis');
       if (synthEl && data.sintesis_claude) {
-        synthEl.textContent = data.sintesis_claude;
+        synthEl.innerHTML = renderMarkdown(data.sintesis_claude);
+      }
+
+      // Si la síntesis arrojó hitos del cronograma, renderizarlos de inmediato en el Timeline
+      if (Array.isArray(data.cronograma) && data.cronograma.length > 0) {
+        const cached = state.cachedProcedures.get(state.activeProcedureId);
+        if (cached) {
+          cached.cronograma = data.cronograma;
+          if (data.proximo_evento_nombre) cached.proximo_evento_nombre = data.proximo_evento_nombre;
+          if (data.proximo_evento_fecha) cached.proximo_evento_fecha = data.proximo_evento_fecha;
+          renderCronogramaAndTimeline(cached);
+        }
       }
 
       // Invalidar cache y refrescar datos
       state.cachedProcedures.delete(state.activeProcedureId);
       await selectProcedure(state.activeProcedureId);
+      await loadTendersTree(true);
     } catch (err) {
       if (!err.message || (!err.message.includes('504') && !err.message.includes('segundo plano') && !err.message.includes('Tiempo de espera'))) {
         hideProgressWidget(0);

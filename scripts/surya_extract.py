@@ -73,8 +73,8 @@ def run_surya_on_images(pil_images):
             return rec_predictor(pil_images, [None] * len(pil_images), det_predictor)
 
 
-def encode_pil_to_jpeg_b64(pil_img, max_dim=1600, quality=78) -> str:
-    """Convierte una página PIL a JPEG base64 optimizado para OCR de imagen."""
+def encode_pil_to_jpeg_b64(pil_img, max_dim=2200, quality=88) -> str:
+    """Convierte una página PIL a JPEG base64 nítido optimizado para OCR de tablas."""
     img = pil_img.convert("RGB")
     w, h = img.size
     if max(w, h) > max_dim:
@@ -108,7 +108,7 @@ def extract_pdf(file_path: str, force_ocr: bool = False):
             if not force_ocr and len(extracted) > 80:
                 pages_text.append((i, extracted))
             elif len(pil_images) < max_ocr_pages:
-                bitmap = page.render(scale=1.4)
+                bitmap = page.render(scale=2.0)
                 pil_img = bitmap.to_pil()
                 oriented_img, rot_deg = auto_orient_image(pil_img)
                 pages_needing_ocr.append(i)

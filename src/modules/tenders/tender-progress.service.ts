@@ -118,7 +118,12 @@ class TenderProgressService {
 
   getProgress(procedureId: string | number): TaskProgress | null {
     const key = String(procedureId);
-    return this.progressMap.get(key) || null;
+    return (
+      this.progressMap.get(key) ||
+      this.progressMap.get(key.replace('virtual-', '')) ||
+      this.progressMap.get(`virtual-${key}`) ||
+      null
+    );
   }
 }
 
