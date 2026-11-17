@@ -79,16 +79,17 @@ def extract_pdf(file_path: str, force_ocr: bool = False):
 
         pages_needing_ocr = []
         pil_images = []
-        max_ocr_pages = 15
+        max_ocr_pages = 5
 
-        for i in range(page_count):
+        # Inspeccionar solo las primeras 20 páginas donde siempre radican convocatorias, bases y calendarios
+        for i in range(min(page_count, 20)):
             page = pdf[i]
             textpage = page.get_textpage()
             extracted = textpage.get_text_range().strip()
             if not force_ocr and len(extracted) > 80:
                 pages_text.append((i, extracted))
             elif len(pil_images) < max_ocr_pages:
-                bitmap = page.render(scale=1.8)
+                bitmap = page.render(scale=1.4)
                 pil_img = bitmap.to_pil()
                 pages_needing_ocr.append(i)
                 pil_images.append(pil_img)

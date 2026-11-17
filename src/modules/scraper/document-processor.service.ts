@@ -277,7 +277,7 @@ export class DocumentProcessorService {
           pyBin,
           [this.suryaScriptPath, localPath, '--mode', ocrMode],
           {
-            timeout: 180000,
+            timeout: 50000,
             maxBuffer: 35 * 1024 * 1024,
           }
         );

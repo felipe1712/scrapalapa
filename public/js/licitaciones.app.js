@@ -781,6 +781,56 @@
     }
   }
 
+  // Polling automático cuando el proxy Nginx devuelve HTTP 504 pero el servidor sigue procesando
+  async function pollForBackgroundCompletion(procedureId, actionType) {
+    showAlert('El documento es extenso y se sigue procesando en segundo plano en el servidor. Sincronizando...', 'info');
+    let attempts = 0;
+    const maxAttempts = 10;
+    const intervalMs = 4000;
+
+    return new Promise((resolve) => {
+      const timer = setInterval(async () => {
+        attempts++;
+        try {
+          const res = await fetch(`/api/tenders/procedures/${procedureId}`);
+          if (res.ok) {
+            const data = await res.json();
+            const proc = data.procedure;
+            const isReady =
+              actionType === 'synthesis'
+                ? proc && proc.sintesis_claude && proc.sintesis_claude.length > 50
+                : proc && Array.isArray(proc.cronograma) && proc.cronograma.length > 0;
+
+            if (isReady) {
+              clearInterval(timer);
+              state.cachedProcedures.delete(procedureId);
+              await selectProcedure(procedureId);
+              showAlert(
+                actionType === 'synthesis'
+                  ? '¡Síntesis ejecutiva sincronizada con éxito!'
+                  : '¡Cronograma de fechas sincronizado con éxito!',
+                'success'
+              );
+              resolve(true);
+              return;
+            }
+          }
+        } catch {
+          // continuar esperando
+        }
+
+        if (attempts >= maxAttempts) {
+          clearInterval(timer);
+          showAlert(
+            'El documento sigue procesándose en el servidor. Pulsa el botón "Actualizar" en el árbol en unos momentos para ver los resultados.',
+            'warning'
+          );
+          resolve(false);
+        }
+      }, intervalMs);
+    });
+  }
+
   // Extraer Cronograma de Fechas con Claude IA
   async function extractTimelineWithIa() {
     if (!state.activeProcedureId) {
@@ -813,7 +863,11 @@
       await selectProcedure(state.activeProcedureId);
       await loadTendersTree(true);
     } catch (err) {
-      showAlert(`Error en extracción de cronograma: ${err.message}`, 'danger');
+      if (err.message && (err.message.includes('504') || err.message.includes('segundo plano') || err.message.includes('Tiempo de espera'))) {
+        await pollForBackgroundCompletion(state.activeProcedureId, 'timeline');
+      } else {
+        showAlert(`Error en extracción de cronograma: ${err.message}`, 'danger');
+      }
     } finally {
       if (btn) {
         btn.disabled = false;
@@ -859,7 +913,11 @@
       state.cachedProcedures.delete(state.activeProcedureId);
       await selectProcedure(state.activeProcedureId);
     } catch (err) {
-      showAlert(`Error al regenerar síntesis: ${err.message}`, 'danger');
+      if (err.message && (err.message.includes('504') || err.message.includes('segundo plano') || err.message.includes('Tiempo de espera'))) {
+        await pollForBackgroundCompletion(state.activeProcedureId, 'synthesis');
+      } else {
+        showAlert(`Error al regenerar síntesis: ${err.message}`, 'danger');
+      }
     } finally {
       if (btn) {
         btn.disabled = false;

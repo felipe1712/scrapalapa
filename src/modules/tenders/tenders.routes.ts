@@ -340,7 +340,13 @@ async function ensureDocumentsOcrText(tenderId: number): Promise<string> {
 
   const texts: string[] = [];
 
-  for (const doc of docsRes.rows) {
+  // Priorizar bases y convocatorias primero
+  const sortedDocs = [...docsRes.rows].sort((a: any, b: any) => {
+    return getDocumentPriorityScore(b.file_name || '') - getDocumentPriorityScore(a.file_name || '');
+  });
+
+  let ocrProcessedCount = 0;
+  for (const doc of sortedDocs) {
     let text = (doc.texto_extraido || '').trim();
     const needsOcr =
       !text ||
@@ -348,11 +354,14 @@ async function ensureDocumentsOcrText(tenderId: number): Promise<string> {
       text.includes('[Error') ||
       text.includes('pdfParse is not a function');
 
-    if (needsOcr && doc.local_path && fs.existsSync(doc.local_path)) {
+    // Procesar prioritariamente a lo sumo 1 documento que requiera OCR por petición
+    // para no bloquear la sesión HTTP y prevenir timeouts 504
+    if (needsOcr && ocrProcessedCount < 1 && doc.local_path && fs.existsSync(doc.local_path)) {
+      ocrProcessedCount++;
       try {
         const fileBuffer = fs.readFileSync(doc.local_path);
         if (fileBuffer.length > 500) {
-          console.log(`[OCR On-Demand] Procesando OCR en documento #${doc.id} (${doc.file_name}, ${fileBuffer.length} bytes)...`);
+          console.log(`[OCR On-Demand] Procesando OCR en documento prioritario #${doc.id} (${doc.file_name}, ${fileBuffer.length} bytes)...`);
           const processed = await documentProcessorService.processDocumentBuffer(
             fileBuffer,
             doc.file_name,
