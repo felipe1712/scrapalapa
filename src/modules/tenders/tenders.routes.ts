@@ -528,7 +528,11 @@ tendersRouter.get('/procedures/:id', async (req: Request, res: Response) => {
  * lee el binario del archivo local y ejecuta el procesamiento OCR (Claude Vision OCR / Tesseract / Surya),
  * persistiendo el texto resultante en la base de datos PostgreSQL.
  */
-async function ensureDocumentsOcrText(tenderId: number, procedureKey?: string): Promise<string> {
+async function ensureDocumentsOcrText(
+  tenderId: number,
+  procedureKey?: string,
+  procHint?: { numero_procedimiento?: string; titulo_objeto?: string }
+): Promise<string> {
   const docsRes = await db.query(
     'SELECT id, file_name, file_type, local_path, texto_extraido, file_size_bytes FROM tender_documents WHERE tender_id = $1 ORDER BY id ASC',
     [tenderId]
@@ -536,9 +540,34 @@ async function ensureDocumentsOcrText(tenderId: number, procedureKey?: string): 
 
   const texts: string[] = [];
 
-  // Priorizar bases y convocatorias primero
+  const procNumClean = (procHint?.numero_procedimiento || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const procTitleTerms = (procHint?.titulo_objeto || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .split(/\s+/)
+    .filter((w) => w.length >= 4);
+
+  // Priorizar bases y convocatorias primero, con máxima prioridad al documento que corresponda
+  // al número de procedimiento u objeto activo (ej. DAOMIFC-CPNE-11/2026, fumigación 2027)
   const sortedDocs = [...docsRes.rows].sort((a: any, b: any) => {
-    return getDocumentPriorityScore(b.file_name || '') - getDocumentPriorityScore(a.file_name || '');
+    let scoreA = getDocumentPriorityScore(a.file_name || '');
+    let scoreB = getDocumentPriorityScore(b.file_name || '');
+
+    const nameA = (a.file_name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const nameB = (b.file_name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+    if (procNumClean.length >= 4) {
+      if (nameA.replace(/[^a-z0-9]/g, '').includes(procNumClean)) scoreA += 10000;
+      if (nameB.replace(/[^a-z0-9]/g, '').includes(procNumClean)) scoreB += 10000;
+    }
+
+    procTitleTerms.forEach((term) => {
+      if (nameA.includes(term)) scoreA += 2000;
+      if (nameB.includes(term)) scoreB += 2000;
+    });
+
+    return scoreB - scoreA;
   });
 
   if (procedureKey) {
@@ -769,19 +798,21 @@ tendersRouter.post('/procedures/:id/extract-timeline', async (req: Request, res:
   try {
     let tenderId = 0;
     let procedureId = 0;
+    let activeProc: any = null;
 
     if (rawId.startsWith('virtual-') || Number.isNaN(procId)) {
       tenderId = Number(rawId.replace('virtual-', ''));
     } else {
-      const pRes = await db.query('SELECT id, tender_id FROM tender_procedures WHERE id = $1 LIMIT 1', [procId]);
+      const pRes = await db.query('SELECT * FROM tender_procedures WHERE id = $1 LIMIT 1', [procId]);
       if (pRes.rowCount && pRes.rowCount > 0) {
-        procedureId = pRes.rows[0].id;
-        tenderId = pRes.rows[0].tender_id;
+        activeProc = pRes.rows[0];
+        procedureId = activeProc.id;
+        tenderId = activeProc.tender_id;
       }
     }
 
     const tenderRes = await db.query(
-      'SELECT id, titulo, source_url, contenido_pagina_texto, texto_documentos_ocr, sintesis_claude FROM tenders WHERE id = $1 LIMIT 1',
+      'SELECT id, titulo, source_url, contenido_pagina_texto, texto_documentos_ocr, sintesis_claude, numero_expediente, entidad FROM tenders WHERE id = $1 LIMIT 1',
       [tenderId]
     );
 
@@ -794,8 +825,8 @@ tendersRouter.post('/procedures/:id/extract-timeline', async (req: Request, res:
 
     const t = tenderRes.rows[0];
 
-    // Asegurar que los documentos adjuntos tengan OCR procesado
-    const docsTexts = await ensureDocumentsOcrText(tenderId, rawId);
+    // Asegurar que los documentos adjuntos tengan OCR procesado, priorizando el documento específico de este procedimiento
+    const docsTexts = await ensureDocumentsOcrText(tenderId, rawId, activeProc);
 
     const sourceText = [docsTexts, t.texto_documentos_ocr, t.contenido_pagina_texto, t.sintesis_claude]
       .filter(Boolean)
@@ -813,11 +844,20 @@ tendersRouter.post('/procedures/:id/extract-timeline', async (req: Request, res:
       detailMessage: 'Extrayendo calendario de actos legales y requisitos obligatorios...',
     });
 
+    const targetProcNum = activeProc?.numero_procedimiento || t.numero_expediente || '';
+    const targetProcTitle = activeProc?.titulo_objeto || t.titulo || '';
+
     const extractionPrompt =
-      `A partir del siguiente texto oficial de la licitación (${t.titulo || t.source_url}), extrae EXHAUSTIVAMENTE el cronograma o calendario de todos los actos y trámites legales del procedimiento (por ejemplo: Publicación de Convocatoria, Consulta de Convocatoria, Recepción de escritos de interés de participación, Visita a Instalaciones, Recepción de solicitudes de aclaración, Junta de Aclaraciones, Presentación y Apertura de Proposiciones Técnicas y Económicas, Dictamen o Fallo, Firma de Contrato).\n` +
-      `Si en el texto hay tablas de cronogramas, eventos, fechas y horarios (ej. '26 de octubre de 2026', '05 de noviembre de 2026 18:00 hrs', '06 de noviembre de 2026'), extrae CADA UNO de los eventos individualmente sin omitir ninguno.\n` +
-      `Convierte todas las fechas al formato estándar YYYY-MM-DD o DD/MM/YYYY. Si alguna hora está indicada, ponla en el campo 'hora'.\n` +
-      `También extrae los requisitos obligatorios o indispensables y el alcance/periodo de contratación.\n\n` +
+      `Estás analizando la licitación convocada por ${activeProc?.entidad || t.entidad || 'la convocante'}.\n` +
+      `Debes extraer el cronograma oficial de fechas y plazos EXCLUSIVAMENTE para el siguiente procedimiento:\n` +
+      `NÚMERO DE PROCEDIMIENTO: "${targetProcNum}"\n` +
+      `OBJETO: "${targetProcTitle}"\n\n` +
+      `ADVERTENCIA Y REGLAS CRÍTICAS:\n` +
+      `1. El expediente puede contener historial o convocatorias pasadas (por ejemplo antecedentes de julio o agosto de 2026). DEBES DESCARTAR Y NO EXTRAER NINGUNA FECHA DE JULIO O AGOSTO si pertenecen a procedimientos o ejercicios anteriores.\n` +
+      `2. Concéntrate ÚNICAMENTE en la convocatoria oficial activa (${targetProcNum}) y extrae los actos de su tabla oficial de fechas (cuyas fechas en bases corresponden a OCTUBRE y NOVIEMBRE de 2026: Publicación el 26 de octubre de 2026, Consulta de la Convocatoria, Recepción de escritos de interés el 05 de noviembre, Visita de instalaciones el 03 de noviembre, Solicitudes de aclaración el 05 de noviembre, Difusión de junta de aclaraciones el 06 de noviembre, Recepción de propuestas el 17 al 19 de noviembre de 2026, Fallo, etc.).\n` +
+      `3. Convierte todas las fechas al formato estándar YYYY-MM-DD o DD/MM/YYYY. Si alguna hora está indicada, ponla en el campo 'hora'.\n` +
+      `4. También extrae los requisitos obligatorios o indispensables y el alcance/periodo de contratación.\n\n` +
+      `TEXTO OFICIAL DE LOS DOCUMENTOS:\n` +
       sourceText.slice(0, 70000);
 
     const extractionRes = await claudeService.extractStructuredJson({
@@ -935,14 +975,16 @@ tendersRouter.post('/procedures/:id/regenerate-synthesis', async (req: Request, 
   try {
     let tenderId = 0;
     let procedureId = 0;
+    let activeProc: any = null;
 
     if (rawId.startsWith('virtual-') || Number.isNaN(procId)) {
       tenderId = Number(rawId.replace('virtual-', ''));
     } else {
-      const pRes = await db.query('SELECT id, tender_id FROM tender_procedures WHERE id = $1 LIMIT 1', [procId]);
+      const pRes = await db.query('SELECT * FROM tender_procedures WHERE id = $1 LIMIT 1', [procId]);
       if (pRes.rowCount && pRes.rowCount > 0) {
-        procedureId = pRes.rows[0].id;
-        tenderId = pRes.rows[0].tender_id;
+        activeProc = pRes.rows[0];
+        procedureId = activeProc.id;
+        tenderId = activeProc.tender_id;
       }
     }
 
@@ -953,10 +995,10 @@ tendersRouter.post('/procedures/:id/regenerate-synthesis', async (req: Request, 
 
     tenderProgressService.startTask(rawId, tenderId, 'synthesis');
 
-    const docsTexts = await ensureDocumentsOcrText(tenderId, rawId);
+    const docsTexts = await ensureDocumentsOcrText(tenderId, rawId, activeProc);
 
     const tenderRes = await db.query(
-      'SELECT id, titulo, source_url, contenido_pagina_texto, texto_documentos_ocr FROM tenders WHERE id = $1 LIMIT 1',
+      'SELECT id, titulo, source_url, contenido_pagina_texto, texto_documentos_ocr, numero_expediente, entidad FROM tenders WHERE id = $1 LIMIT 1',
       [tenderId]
     );
 
@@ -983,9 +1025,16 @@ tendersRouter.post('/procedures/:id/regenerate-synthesis', async (req: Request, 
       detailMessage: 'Redactando resumen de objeto, plazos y condiciones...',
     });
 
+    const targetProcNum = activeProc?.numero_procedimiento || t.numero_expediente || '';
+    const targetProcTitle = activeProc?.titulo_objeto || t.titulo || '';
+
     const summaryPrompt =
-      `Genera una síntesis ejecutiva clara, profesional y concisa para la siguiente licitación (${t.titulo || t.source_url}).\n` +
-      `Describe: 1) Objeto o propósito de la contratación, 2) Entidad convocante, 3) Plazos y fechas críticas, 4) Requisitos o condiciones indispensables.\n\n` +
+      `Genera una síntesis ejecutiva clara, profesional y concisa para el siguiente procedimiento específico:\n` +
+      `PROCEDIMIENTO: "${targetProcNum}"\n` +
+      `OBJETO: "${targetProcTitle}"\n` +
+      `ENTIDAD CONVOCANTE: "${activeProc?.entidad || t.entidad || 'INDAABIN'}"\n\n` +
+      `REGLA CLAVE: En el expediente puede haber texto o convocatorias pasadas (como antecedentes de fumigación de julio/agosto 2026). DEBES DESCARTARLAS. Concéntrate exclusivamente en la convocatoria activa (${targetProcNum}) con vigencia para el ejercicio 2027 y fechas oficiales en bases de OCTUBRE y NOVIEMBRE de 2026.\n` +
+      `Describe: 1) Objeto o propósito de la contratación, 2) Entidad convocante, 3) Plazos y fechas críticas (incluyendo una tabla con los actos de la convocatoria activa en octubre y noviembre de 2026: publicación el 26 de octubre, interés, visita, aclaraciones el 5 de noviembre, propuestas el 17 al 19 de noviembre), 4) Requisitos o condiciones indispensables.\n\n` +
       sourceText.slice(0, 50000);
 
     const claudeRes = await claudeService.generateTaskText({
