@@ -1,5 +1,6 @@
 node_modules/
-dist/
+/dist/
+!template/assets/vendor/bootstrap-5/dist/
 data/
 .venv-surya/
 .env
