@@ -19,6 +19,25 @@ os.environ["TQDM_DISABLE"] = "1"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
 
+def auto_orient_image(pil_img):
+    """
+    Detecta si una página o tabla viene rotada verticalmente / apaisada (90°, 180°, 270°)
+    y la rota automáticamente para que el OCR y Claude lean las columnas de izquierda a derecha.
+    """
+    try:
+        import pytesseract
+        if shutil.which("tesseract"):
+            osd = pytesseract.image_to_osd(pil_img, output_type=pytesseract.Output.DICT)
+            rot = osd.get("rotate", 0)
+            conf = osd.get("orientation_conf", 0)
+            if rot in (90, 180, 270) and conf > 1.2:
+                # Rotar la imagen para que quede orientada correctamente
+                return pil_img.rotate(360 - rot, expand=True), rot
+    except Exception:
+        pass
+    return pil_img, 0
+
+
 def run_tesseract_on_image(pil_img) -> str:
     """Intenta OCR rápido en CPU con Tesseract (español + inglés)."""
     try:
@@ -91,8 +110,9 @@ def extract_pdf(file_path: str, force_ocr: bool = False):
             elif len(pil_images) < max_ocr_pages:
                 bitmap = page.render(scale=1.4)
                 pil_img = bitmap.to_pil()
+                oriented_img, rot_deg = auto_orient_image(pil_img)
                 pages_needing_ocr.append(i)
-                pil_images.append(pil_img)
+                pil_images.append(oriented_img)
             else:
                 if extracted:
                     pages_text.append((i, extracted))

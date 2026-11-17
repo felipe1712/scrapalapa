@@ -781,54 +781,133 @@
     }
   }
 
-  // Polling automático cuando el proxy Nginx devuelve HTTP 504 pero el servidor sigue procesando
-  async function pollForBackgroundCompletion(procedureId, actionType) {
-    showAlert('El documento es extenso y se sigue procesando en segundo plano en el servidor. Sincronizando...', 'info');
-    let attempts = 0;
-    const maxAttempts = 10;
-    const intervalMs = 4000;
+  // =========================================================================
+  // WIDGET DE PROGRESO EN TIEMPO REAL (POR DOCUMENTO Y PORCENTAJE)
+  // =========================================================================
+  let progressPollTimer = null;
 
-    return new Promise((resolve) => {
-      const timer = setInterval(async () => {
-        attempts++;
-        try {
-          const res = await fetch(`/api/tenders/procedures/${procedureId}`);
-          if (res.ok) {
-            const data = await res.json();
-            const proc = data.procedure;
-            const isReady =
-              actionType === 'synthesis'
-                ? proc && proc.sintesis_claude && proc.sintesis_claude.length > 50
-                : proc && Array.isArray(proc.cronograma) && proc.cronograma.length > 0;
+  function showProgressWidget(title, detail) {
+    const widget = document.getElementById('procedureProgressWidget');
+    if (!widget) return;
+    widget.classList.remove('d-none');
 
-            if (isReady) {
-              clearInterval(timer);
-              state.cachedProcedures.delete(procedureId);
-              await selectProcedure(procedureId);
-              showAlert(
-                actionType === 'synthesis'
-                  ? '¡Síntesis ejecutiva sincronizada con éxito!'
-                  : '¡Cronograma de fechas sincronizado con éxito!',
-                'success'
-              );
-              resolve(true);
-              return;
+    const titleEl = document.getElementById('progressStageTitle');
+    const detailEl = document.getElementById('progressDetailText');
+    const badgeEl = document.getElementById('progressPercentBadge');
+    const barEl = document.getElementById('progressBarFill');
+
+    if (titleEl) titleEl.textContent = title || 'Procesando expediente...';
+    if (detailEl) detailEl.textContent = detail || 'Iniciando inspección documental y auto-rotación de tablas...';
+    if (badgeEl) badgeEl.textContent = '15%';
+    if (barEl) {
+      barEl.style.width = '15%';
+      barEl.className = 'progress-bar progress-bar-striped progress-bar-animated bg-primary';
+    }
+  }
+
+  function updateProgressWidget(data) {
+    const widget = document.getElementById('procedureProgressWidget');
+    if (!widget || widget.classList.contains('d-none')) return;
+
+    const titleEl = document.getElementById('progressStageTitle');
+    const detailEl = document.getElementById('progressDetailText');
+    const badgeEl = document.getElementById('progressPercentBadge');
+    const barEl = document.getElementById('progressBarFill');
+    const docsCountEl = document.getElementById('progressDocsCount');
+    const docsListEl = document.getElementById('progressDocsList');
+
+    const pct = Math.min(100, Math.max(10, Number(data.percent || 15)));
+    if (badgeEl) badgeEl.textContent = `${pct}%`;
+    if (barEl) barEl.style.width = `${pct}%`;
+    if (titleEl && data.currentStage) titleEl.textContent = data.currentStage;
+    if (detailEl && data.detailMessage) detailEl.textContent = data.detailMessage;
+
+    if (Array.isArray(data.documents) && data.documents.length > 0) {
+      if (docsCountEl) docsCountEl.textContent = String(data.documents.length);
+      if (docsListEl) {
+        docsListEl.innerHTML = data.documents
+          .map((doc) => {
+            let statusBadge = '<span class="badge bg-secondary-subtle text-secondary border">En cola</span>';
+            let icon = '<i class="bi bi-clock text-secondary me-1"></i>';
+
+            if (doc.status === 'processing') {
+              statusBadge = '<span class="badge bg-primary">Procesando OCR</span>';
+              icon = '<span class="spinner-border spinner-border-sm text-primary me-1" role="status"></span>';
+            } else if (doc.status === 'completed') {
+              statusBadge = `<span class="badge bg-success-subtle text-success border border-success">${escapeHtml(doc.stage || 'Listo')}</span>`;
+              icon = '<i class="bi bi-check-circle-fill text-success me-1"></i>';
+            } else if (doc.status === 'error') {
+              statusBadge = '<span class="badge bg-danger">Error</span>';
+              icon = '<i class="bi bi-exclamation-triangle-fill text-danger me-1"></i>';
+            }
+
+            return `
+              <div class="d-flex align-items-center justify-content-between p-2 rounded bg-white border small">
+                <div class="d-flex align-items-center text-truncate me-2" style="max-width: 75%;">
+                  ${icon}
+                  <span class="fw-medium text-dark text-truncate">${escapeHtml(doc.fileName)}</span>
+                  ${doc.sizeKb ? `<span class="text-secondary ms-1 small">(${doc.sizeKb} KB)</span>` : ''}
+                </div>
+                <div>${statusBadge}</div>
+              </div>
+            `;
+          })
+          .join('');
+      }
+    }
+  }
+
+  function hideProgressWidget(delayMs = 2500) {
+    if (progressPollTimer) {
+      clearInterval(progressPollTimer);
+      progressPollTimer = null;
+    }
+
+    const badgeEl = document.getElementById('progressPercentBadge');
+    const barEl = document.getElementById('progressBarFill');
+    const titleEl = document.getElementById('progressStageTitle');
+
+    if (badgeEl) badgeEl.textContent = '100%';
+    if (barEl) {
+      barEl.style.width = '100%';
+      barEl.className = 'progress-bar bg-success';
+    }
+    if (titleEl) titleEl.textContent = '¡Completado con éxito!';
+
+    setTimeout(() => {
+      const widget = document.getElementById('procedureProgressWidget');
+      if (widget) widget.classList.add('d-none');
+    }, delayMs);
+  }
+
+  function startProgressPolling(procedureId, onFinished) {
+    if (progressPollTimer) clearInterval(progressPollTimer);
+
+    progressPollTimer = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/tenders/procedures/${procedureId}/progress`);
+        if (res.ok) {
+          const data = await safeParseJson(res);
+          if (data && data.ok) {
+            updateProgressWidget(data);
+            if (data.status === 'completed' || data.percent >= 100) {
+              clearInterval(progressPollTimer);
+              progressPollTimer = null;
+              hideProgressWidget(2000);
+              if (typeof onFinished === 'function') onFinished(true);
+            } else if (data.status === 'error') {
+              clearInterval(progressPollTimer);
+              progressPollTimer = null;
+              showAlert(`Error en procesamiento: ${data.error || data.detailMessage}`, 'danger');
+              hideProgressWidget(3500);
+              if (typeof onFinished === 'function') onFinished(false);
             }
           }
-        } catch {
-          // continuar esperando
         }
-
-        if (attempts >= maxAttempts) {
-          clearInterval(timer);
-          showAlert(
-            'El documento sigue procesándose en el servidor. Pulsa el botón "Actualizar" en el árbol en unos momentos para ver los resultados.',
-            'warning'
-          );
-          resolve(false);
-        }
-      }, intervalMs);
-    });
+      } catch {
+        // Ignorar fluctuaciones de red temporales durante polling
+      }
+    }, 1400);
   }
 
   // Extraer Cronograma de Fechas con Claude IA
@@ -845,6 +924,15 @@
       btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Extrayendo...';
     }
 
+    showProgressWidget('Extrayendo Cronograma de Fechas', 'Iniciando análisis del expediente y auto-rotación de tablas...');
+    startProgressPolling(state.activeProcedureId, async (success) => {
+      if (success) {
+        state.cachedProcedures.delete(state.activeProcedureId);
+        await selectProcedure(state.activeProcedureId);
+        await loadTendersTree(true);
+      }
+    });
+
     try {
       showAlert('Extrayendo fechas del cronograma con Claude...', 'info');
       const res = await fetch(`/api/tenders/procedures/${state.activeProcedureId}/extract-timeline`, {
@@ -856,6 +944,7 @@
         throw new Error(data.message || 'Error al extraer cronograma');
       }
 
+      hideProgressWidget(1500);
       showAlert('¡Cronograma y requisitos extraídos y guardados con éxito!', 'success');
 
       // Invalidar cache y refrescar
@@ -863,11 +952,11 @@
       await selectProcedure(state.activeProcedureId);
       await loadTendersTree(true);
     } catch (err) {
-      if (err.message && (err.message.includes('504') || err.message.includes('segundo plano') || err.message.includes('Tiempo de espera'))) {
-        await pollForBackgroundCompletion(state.activeProcedureId, 'timeline');
-      } else {
+      if (!err.message || (!err.message.includes('504') && !err.message.includes('segundo plano') && !err.message.includes('Tiempo de espera'))) {
+        hideProgressWidget(0);
         showAlert(`Error en extracción de cronograma: ${err.message}`, 'danger');
       }
+      // Si fue 504, el polling sigue activo y actualizará la pantalla automáticamente al terminar
     } finally {
       if (btn) {
         btn.disabled = false;
@@ -890,6 +979,14 @@
       btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Sintetizando...';
     }
 
+    showProgressWidget('Regenerando Síntesis Ejecutiva', 'Inspeccionando texto OCR y estructurando resumen...');
+    startProgressPolling(state.activeProcedureId, async (success) => {
+      if (success) {
+        state.cachedProcedures.delete(state.activeProcedureId);
+        await selectProcedure(state.activeProcedureId);
+      }
+    });
+
     try {
       showAlert('Regenerando síntesis ejecutiva con Claude...', 'info');
       const res = await fetch(`/api/tenders/procedures/${state.activeProcedureId}/regenerate-synthesis`, {
@@ -901,6 +998,7 @@
         throw new Error(data.message || 'Error al regenerar síntesis');
       }
 
+      hideProgressWidget(1500);
       showAlert('¡Síntesis ejecutiva actualizada con éxito!', 'success');
 
       // Actualizar contenedor de síntesis en el DOM
@@ -913,11 +1011,11 @@
       state.cachedProcedures.delete(state.activeProcedureId);
       await selectProcedure(state.activeProcedureId);
     } catch (err) {
-      if (err.message && (err.message.includes('504') || err.message.includes('segundo plano') || err.message.includes('Tiempo de espera'))) {
-        await pollForBackgroundCompletion(state.activeProcedureId, 'synthesis');
-      } else {
+      if (!err.message || (!err.message.includes('504') && !err.message.includes('segundo plano') && !err.message.includes('Tiempo de espera'))) {
+        hideProgressWidget(0);
         showAlert(`Error al regenerar síntesis: ${err.message}`, 'danger');
       }
+      // Si fue 504, el polling sigue activo y actualizará la pantalla automáticamente al terminar
     } finally {
       if (btn) {
         btn.disabled = false;
@@ -1111,6 +1209,12 @@
     document.getElementById('btnToggleViewerCard')?.addEventListener('click', () => {
       const card = document.getElementById('detailPdfViewerCard');
       card?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    // Toggle Docs List in Progress Widget
+    document.getElementById('progressDocsToggle')?.addEventListener('click', () => {
+      const wrapper = document.getElementById('progressDocsListWrapper');
+      wrapper?.classList.toggle('d-none');
     });
 
     // Initial Loads

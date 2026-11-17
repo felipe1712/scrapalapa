@@ -9,6 +9,7 @@ import { TaskNameSchema, TenderExtractionSchema, TenderExtraction, TenderTimelin
 import { authService } from '../auth/auth.service.js';
 import { getDocumentPriorityScore } from '../scraper/lightpanda.service.js';
 import { documentProcessorService } from '../scraper/document-processor.service.js';
+import { tenderProgressService } from './tender-progress.service.js';
 
 export const tendersRouter = Router();
 
@@ -332,9 +333,9 @@ tendersRouter.get('/procedures/:id', async (req: Request, res: Response) => {
  * lee el binario del archivo local y ejecuta el procesamiento OCR (Claude Vision OCR / Tesseract / Surya),
  * persistiendo el texto resultante en la base de datos PostgreSQL.
  */
-async function ensureDocumentsOcrText(tenderId: number): Promise<string> {
+async function ensureDocumentsOcrText(tenderId: number, procedureKey?: string): Promise<string> {
   const docsRes = await db.query(
-    'SELECT id, file_name, file_type, local_path, texto_extraido FROM tender_documents WHERE tender_id = $1 ORDER BY id ASC',
+    'SELECT id, file_name, file_type, local_path, texto_extraido, file_size_bytes FROM tender_documents WHERE tender_id = $1 ORDER BY id ASC',
     [tenderId]
   );
 
@@ -344,6 +345,21 @@ async function ensureDocumentsOcrText(tenderId: number): Promise<string> {
   const sortedDocs = [...docsRes.rows].sort((a: any, b: any) => {
     return getDocumentPriorityScore(b.file_name || '') - getDocumentPriorityScore(a.file_name || '');
   });
+
+  if (procedureKey) {
+    tenderProgressService.updateProgress(procedureKey, {
+      percent: 25,
+      currentStage: 'Inspeccionando documentos adjuntos...',
+      detailMessage: `${sortedDocs.length} documento(s) identificados.`,
+      documents: sortedDocs.map((d: any) => ({
+        id: d.id,
+        fileName: d.file_name,
+        status: d.texto_extraido && d.texto_extraido.length > 300 ? 'completed' : 'pending',
+        stage: d.texto_extraido && d.texto_extraido.length > 300 ? 'Texto OCR disponible' : 'En cola de procesamiento',
+        sizeKb: d.file_size_bytes ? Math.round(d.file_size_bytes / 1024) : 0,
+      })),
+    });
+  }
 
   let ocrProcessedCount = 0;
   for (const doc of sortedDocs) {
@@ -358,6 +374,20 @@ async function ensureDocumentsOcrText(tenderId: number): Promise<string> {
     // para no bloquear la sesión HTTP y prevenir timeouts 504
     if (needsOcr && ocrProcessedCount < 1 && doc.local_path && fs.existsSync(doc.local_path)) {
       ocrProcessedCount++;
+      if (procedureKey) {
+        tenderProgressService.updateProgress(procedureKey, {
+          percent: 45,
+          currentStage: 'Ejecutando OCR con auto-rotación de tablas...',
+          detailMessage: `Procesando ${doc.file_name}`,
+          currentDocName: doc.file_name,
+          docUpdate: {
+            fileName: doc.file_name,
+            status: 'processing',
+            stage: 'Detectando orientación y extrayendo OCR...',
+          },
+        });
+      }
+
       try {
         const fileBuffer = fs.readFileSync(doc.local_path);
         if (fileBuffer.length > 500) {
@@ -376,10 +406,33 @@ async function ensureDocumentsOcrText(tenderId: number): Promise<string> {
                WHERE id = $4`,
               [text, processed.extractionMethod, processed.pagesProcessed, doc.id]
             );
+
+            if (procedureKey) {
+              tenderProgressService.updateProgress(procedureKey, {
+                percent: 65,
+                currentStage: 'Documento procesado con éxito',
+                detailMessage: `${doc.file_name} listo (${processed.pagesProcessed} págs, ${processed.extractionMethod})`,
+                docUpdate: {
+                  fileName: doc.file_name,
+                  status: 'completed',
+                  stage: `Listo (${processed.pagesProcessed} págs)`,
+                  pagesProcessed: processed.pagesProcessed,
+                },
+              });
+            }
           }
         }
       } catch (err: any) {
         console.warn(`[OCR On-Demand] Error al procesar doc #${doc.id}:`, err?.message);
+        if (procedureKey) {
+          tenderProgressService.updateProgress(procedureKey, {
+            docUpdate: {
+              fileName: doc.file_name,
+              status: 'error',
+              stage: 'Error de extracción',
+            },
+          });
+        }
       }
     }
 
@@ -398,6 +451,20 @@ async function ensureDocumentsOcrText(tenderId: number): Promise<string> {
 
   return combined;
 }
+
+/**
+ * GET /api/tenders/procedures/:id/progress
+ * Devuelve el estado en tiempo real, etapa, porcentaje y desglose por documento.
+ */
+tendersRouter.get('/procedures/:id/progress', (req: Request, res: Response) => {
+  const rawId = String(req.params.id || '');
+  const progress = tenderProgressService.getProgress(rawId);
+  if (!progress) {
+    res.json({ ok: true, status: 'idle', percent: 100, currentStage: 'Listo', detailMessage: '', documents: [] });
+    return;
+  }
+  res.json({ ok: true, ...progress });
+});
 
 /**
  * GET /api/tenders/procedures/:id/raw-text
@@ -512,19 +579,28 @@ tendersRouter.post('/procedures/:id/extract-timeline', async (req: Request, res:
       return;
     }
 
+    tenderProgressService.startTask(rawId, tenderId, 'timeline');
+
     const t = tenderRes.rows[0];
 
     // Asegurar que los documentos adjuntos tengan OCR procesado
-    const docsTexts = await ensureDocumentsOcrText(tenderId);
+    const docsTexts = await ensureDocumentsOcrText(tenderId, rawId);
 
     const sourceText = [docsTexts, t.texto_documentos_ocr, t.contenido_pagina_texto, t.sintesis_claude]
       .filter(Boolean)
       .join('\n\n');
 
     if (!sourceText || sourceText.length < 30) {
+      tenderProgressService.failTask(rawId, 'El documento no contiene texto suficiente para extraer fechas.');
       res.status(400).json({ ok: false, message: 'El documento no contiene texto suficiente para extraer fechas.' });
       return;
     }
+
+    tenderProgressService.updateProgress(rawId, {
+      percent: 75,
+      currentStage: 'Estructurando cronograma con Claude IA...',
+      detailMessage: 'Extrayendo calendario de actos legales y requisitos obligatorios...',
+    });
 
     const extractionPrompt =
       `A partir del siguiente texto oficial de la licitación (${t.titulo || t.source_url}), extrae EXHAUSTIVAMENTE el cronograma o calendario de todos los actos y trámites legales del procedimiento (por ejemplo: Publicación de Convocatoria, Consulta de Convocatoria, Recepción de escritos de interés de participación, Visita a Instalaciones, Recepción de solicitudes de aclaración, Junta de Aclaraciones, Presentación y Apertura de Proposiciones Técnicas y Económicas, Dictamen o Fallo, Firma de Contrato).\n` +
@@ -609,6 +685,8 @@ tendersRouter.post('/procedures/:id/extract-timeline', async (req: Request, res:
       );
     }
 
+    tenderProgressService.completeTask(rawId, '¡Cronograma y requisitos extraídos con éxito!');
+
     res.json({
       ok: true,
       message: 'Cronograma y requisitos extraídos con éxito.',
@@ -619,6 +697,7 @@ tendersRouter.post('/procedures/:id/extract-timeline', async (req: Request, res:
       proximo_evento_fecha: proximoFecha,
     });
   } catch (err: any) {
+    tenderProgressService.failTask(rawId, err?.message || 'Error al extraer cronograma con IA.');
     res.status(500).json({ ok: false, message: err?.message || 'Error al extraer cronograma con IA.' });
   }
 });
@@ -650,7 +729,9 @@ tendersRouter.post('/procedures/:id/regenerate-synthesis', async (req: Request, 
       return;
     }
 
-    const docsTexts = await ensureDocumentsOcrText(tenderId);
+    tenderProgressService.startTask(rawId, tenderId, 'synthesis');
+
+    const docsTexts = await ensureDocumentsOcrText(tenderId, rawId);
 
     const tenderRes = await db.query(
       'SELECT id, titulo, source_url, contenido_pagina_texto, texto_documentos_ocr FROM tenders WHERE id = $1 LIMIT 1',
@@ -658,6 +739,7 @@ tendersRouter.post('/procedures/:id/regenerate-synthesis', async (req: Request, 
     );
 
     if (tenderRes.rowCount === 0) {
+      tenderProgressService.failTask(rawId, 'Licitación no encontrada');
       res.status(404).json({ ok: false, message: 'Licitación no encontrada' });
       return;
     }
@@ -668,9 +750,16 @@ tendersRouter.post('/procedures/:id/regenerate-synthesis', async (req: Request, 
       .join('\n\n');
 
     if (!sourceText || sourceText.length < 30) {
+      tenderProgressService.failTask(rawId, 'No hay texto suficiente en el expediente para generar la síntesis.');
       res.status(400).json({ ok: false, message: 'No hay texto suficiente en el expediente para generar la síntesis.' });
       return;
     }
+
+    tenderProgressService.updateProgress(rawId, {
+      percent: 75,
+      currentStage: 'Generando síntesis ejecutiva con Claude IA...',
+      detailMessage: 'Redactando resumen de objeto, plazos y condiciones...',
+    });
 
     const summaryPrompt =
       `Genera una síntesis ejecutiva clara, profesional y concisa para la siguiente licitación (${t.titulo || t.source_url}).\n` +
@@ -702,12 +791,15 @@ tendersRouter.post('/procedures/:id/regenerate-synthesis', async (req: Request, 
       );
     }
 
+    tenderProgressService.completeTask(rawId, '¡Síntesis ejecutiva regenerada con éxito!');
+
     res.json({
       ok: true,
       message: 'Síntesis ejecutiva regenerada con éxito.',
       sintesis_claude: newSynthesis,
     });
   } catch (err: any) {
+    tenderProgressService.failTask(rawId, err?.message || 'Error al regenerar la síntesis ejecutiva.');
     res.status(500).json({
       ok: false,
       message: err?.message || 'Error al regenerar la síntesis ejecutiva.',
