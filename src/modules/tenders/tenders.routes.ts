@@ -688,8 +688,8 @@ tendersRouter.post('/procedures/:id/regenerate-synthesis', async (req: Request, 
 
     if (procedureId > 0) {
       await db.query(
-        'UPDATE tender_procedures SET resumen_objeto = COALESCE(NULLIF(resumen_objeto, \'\'), $1), updated_at = NOW() WHERE id = $2',
-        [newSynthesis.slice(0, 1000), procedureId]
+        'UPDATE tender_procedures SET sintesis_claude = $1, updated_at = NOW() WHERE id = $2',
+        [newSynthesis, procedureId]
       );
     }
 
