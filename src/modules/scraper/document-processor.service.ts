@@ -303,9 +303,24 @@ export class DocumentProcessorService {
       }
     }
 
-    // 2. Si el PDF está conformado por imágenes escaneadas (renderedPagesB64 > 0 o localExtractedText < 300 chars),
-    // realizar OCR de imagen de alta precisión (Vision OCR sobre las páginas renderizadas)
-    if (renderedPagesB64.length > 0 || localExtractedText.length < 300) {
+    // 2. Si el proceso local de Surya OCR / Tesseract ya extrajo texto completo (>= 300 caracteres),
+    // utilizar ese texto directamente y omitir la llamada de visión a Claude
+    if (localExtractedText.length >= 300) {
+      return {
+        fileName,
+        sourceUrl,
+        fileType: 'pdf',
+        fileSizeBytes: buffer.length,
+        localPath,
+        extractionMethod: localMethod,
+        pagesProcessed: detectedPages,
+        extractedText: localExtractedText,
+      };
+    }
+
+    // 3. Fallback: Solo si Surya OCR / Tesseract no obtuvieron texto suficiente (< 300 caracteres),
+    // recurrir a Vision OCR con Claude sobre las páginas renderizadas
+    if (renderedPagesB64.length > 0 || detectedPages <= 90) {
       const visionOcrText = await claudeService.extractTextFromScannedImages({
         renderedPages: renderedPagesB64,
         pdfBufferFallback: detectedPages <= 90 ? buffer : undefined,
