@@ -98,14 +98,30 @@ def extract_pdf(file_path: str, force_ocr: bool = False):
 
         pages_needing_ocr = []
         pil_images = []
-        max_ocr_pages = 5
+        max_ocr_pages = 10
 
-        # Inspeccionar solo las primeras 20 páginas donde siempre radican convocatorias, bases y calendarios
+        def page_has_scanned_content(p, txt: str) -> bool:
+            clean = txt.strip()
+            # Si el texto es breve (< 600 caracteres en una página A4), típicamente es una portada o una tabla escaneada con membrete digital
+            if len(clean) < 600:
+                return True
+            try:
+                objs = list(p.get_objects())
+                has_img = any(isinstance(obj, pdfium.PdfImage) for obj in objs)
+                if has_img and len(clean) < 1500:
+                    return True
+            except Exception:
+                pass
+            return False
+
+        # Inspeccionar las primeras 20 páginas donde radican convocatorias, bases y cronogramas
         for i in range(min(page_count, 20)):
             page = pdf[i]
             textpage = page.get_textpage()
             extracted = textpage.get_text_range().strip()
-            if not force_ocr and len(extracted) > 80:
+            is_scanned = page_has_scanned_content(page, extracted)
+
+            if not force_ocr and not is_scanned and len(extracted) >= 600:
                 pages_text.append((i, extracted))
             elif len(pil_images) < max_ocr_pages:
                 bitmap = page.render(scale=2.0)
@@ -113,6 +129,8 @@ def extract_pdf(file_path: str, force_ocr: bool = False):
                 oriented_img, rot_deg = auto_orient_image(pil_img)
                 pages_needing_ocr.append(i)
                 pil_images.append(oriented_img)
+                if extracted:
+                    pages_text.append((i, extracted))
             else:
                 if extracted:
                     pages_text.append((i, extracted))
@@ -126,12 +144,19 @@ def extract_pdf(file_path: str, force_ocr: bool = False):
                     t_txt = run_tesseract_on_image(img)
                     if t_txt:
                         tess_results.append((idx, t_txt))
-                if len(tess_results) == len(pages_needing_ocr):
-                    pages_text.extend(tess_results)
-                    method_used = "tesseract_ocr"
-                    tesseract_succeeded = True
+                if len(tess_results) > 0:
+                    for idx, t_txt in tess_results:
+                        existing_idx = next((k for k, p in enumerate(pages_text) if p[0] == idx), None)
+                        if existing_idx is not None:
+                            prev_txt = pages_text[existing_idx][1]
+                            pages_text[existing_idx] = (idx, f"{prev_txt}\n\n[TABLA / OCR TESSERACT]\n{t_txt}")
+                        else:
+                            pages_text.append((idx, t_txt))
+                    if len(tess_results) == len(pages_needing_ocr):
+                        method_used = "tesseract_ocr"
+                        tesseract_succeeded = True
 
-            # 2. Si Tesseract no procesó todas las páginas, intentar Surya OCR
+            # 2. Si Tesseract no cubrió todas las páginas, ejecutar Surya OCR
             surya_succeeded = False
             if not tesseract_succeeded:
                 try:
@@ -140,7 +165,12 @@ def extract_pdf(file_path: str, force_ocr: bool = False):
                         line_texts = [line.text for line in pred.text_lines if getattr(line, "text", None)]
                         txt_joined = "\n".join(line_texts).strip()
                         if txt_joined:
-                            pages_text.append((idx, txt_joined))
+                            existing_idx = next((k for k, p in enumerate(pages_text) if p[0] == idx), None)
+                            if existing_idx is not None:
+                                prev_txt = pages_text[existing_idx][1]
+                                pages_text[existing_idx] = (idx, f"{prev_txt}\n\n[TABLA / SURYA OCR]\n{txt_joined}")
+                            else:
+                                pages_text.append((idx, txt_joined))
                     if len(pages_text) > 0:
                         method_used = "surya_ocr"
                         surya_succeeded = True
@@ -148,7 +178,7 @@ def extract_pdf(file_path: str, force_ocr: bool = False):
                     surya_succeeded = False
 
             # 3. Exportar siempre las imágenes JPEG base64 de las páginas escaneadas
-            # para permitir OCR Multimodal de alta precisión en tablas e imágenes con firmas cruzadas
+            # para permitir OCR Multimodal de alta precisión con visión en tablas
             for idx, img in zip(pages_needing_ocr[:10], pil_images[:10]):
                 rendered_pages_b64.append({
                     "page": idx + 1,

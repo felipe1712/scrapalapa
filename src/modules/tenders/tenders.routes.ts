@@ -591,11 +591,15 @@ async function ensureDocumentsOcrText(
   let ocrProcessedCount = 0;
   for (const doc of sortedDocs) {
     let text = (doc.texto_extraido || '').trim();
+    const isOnlyPdfParse = !doc.metodo_extraccion || doc.metodo_extraccion === 'pdf_text_parser';
+    const lacksMilestones = !text.toLowerCase().includes('propuesta') && !text.toLowerCase().includes('aclaracion');
+    const isCorrupted = text.includes('[Error') || text.includes('pdfParse is not a function');
+
     const needsOcr =
       !text ||
-      text.length < 300 ||
-      text.includes('[Error') ||
-      text.includes('pdfParse is not a function');
+      text.length < 500 ||
+      isCorrupted ||
+      (isOnlyPdfParse && lacksMilestones);
 
     // Procesar prioritariamente a lo sumo 1 documento que requiera OCR por petición
     // para no bloquear la sesión HTTP y prevenir timeouts 504
@@ -604,13 +608,13 @@ async function ensureDocumentsOcrText(
       if (procedureKey) {
         tenderProgressService.updateProgress(procedureKey, {
           percent: 45,
-          currentStage: 'Ejecutando OCR con auto-rotación de tablas...',
+          currentStage: 'Ejecutando OCR multimodal en tablas escaneadas...',
           detailMessage: `Procesando ${doc.file_name}`,
           currentDocName: doc.file_name,
           docUpdate: {
             fileName: doc.file_name,
             status: 'processing',
-            stage: 'Detectando orientación y extrayendo OCR...',
+            stage: 'Transcribiendo tablas escaneadas con Surya y Visión...',
           },
         });
       }
@@ -623,7 +627,7 @@ async function ensureDocumentsOcrText(
             fileBuffer,
             doc.file_name,
             doc.local_path,
-            'auto'
+            'forzar_surya'
           );
           if (processed && processed.extractedText && processed.extractedText.trim().length > 50) {
             text = processed.extractedText.trim();

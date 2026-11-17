@@ -186,7 +186,9 @@ export class DocumentProcessorService {
         const cachedDoc = await db.query(
           `SELECT metodo_extraccion, paginas_procesadas, texto_extraido
            FROM tender_documents
-           WHERE local_path = $1 AND LENGTH(texto_extraido) > 250
+           WHERE local_path = $1 
+             AND LENGTH(texto_extraido) > 400
+             AND metodo_extraccion IN ('surya_ocr', 'tesseract_ocr', 'vision_ocr', 'surya_hybrid_pdf')
            ORDER BY id DESC LIMIT 1`,
           [localPath]
         );
@@ -303,9 +305,15 @@ export class DocumentProcessorService {
       }
     }
 
-    // 2. Si el proceso local de Surya OCR / Tesseract ya extrajo texto completo (>= 300 caracteres),
-    // utilizar ese texto directamente y omitir la llamada de visión a Claude
-    if (localExtractedText.length >= 300) {
+    // 2. Comprobar si el texto extraído localmente por Surya OCR / Tesseract contiene los actos clave
+    const lowerLocal = localExtractedText.toLowerCase();
+    const hasMilestones =
+      lowerLocal.includes('propuesta') ||
+      lowerLocal.includes('aclaracion') ||
+      lowerLocal.includes('fallo') ||
+      lowerLocal.includes('convocatoria');
+
+    if (localExtractedText.length >= 800 && hasMilestones && ocrMode !== 'forzar_surya') {
       return {
         fileName,
         sourceUrl,
@@ -318,16 +326,17 @@ export class DocumentProcessorService {
       };
     }
 
-    // 3. Fallback: Solo si Surya OCR / Tesseract no obtuvieron texto suficiente (< 300 caracteres),
-    // recurrir a Vision OCR con Claude sobre las páginas renderizadas
+    // 3. Fallback / Enriquecimiento: Si el texto local es insuficiente o no capturó la tabla,
+    // o se forzó OCR, recurrir a Vision OCR con Claude sobre las páginas renderizadas
     if (renderedPagesB64.length > 0 || detectedPages <= 90) {
+      console.log(`[DocumentProcessor] Ejecutando Vision OCR para transcribir tablas escaneadas en ${fileName}...`);
       const visionOcrText = await claudeService.extractTextFromScannedImages({
         renderedPages: renderedPagesB64,
         pdfBufferFallback: detectedPages <= 90 ? buffer : undefined,
         fileName,
       });
 
-      if (visionOcrText && visionOcrText.length > localExtractedText.length) {
+      if (visionOcrText && visionOcrText.trim().length > 50) {
         return {
           fileName,
           sourceUrl,
@@ -336,7 +345,7 @@ export class DocumentProcessorService {
           localPath,
           extractionMethod: 'vision_ocr',
           pagesProcessed: detectedPages,
-          extractedText: visionOcrText,
+          extractedText: `${localExtractedText}\n\n=== TABLAS TRANSCRIBIDAS CON VISIÓN OCR ===\n${visionOcrText.trim()}`,
         };
       }
     }
