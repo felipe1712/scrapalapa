@@ -210,9 +210,18 @@ tendersRouter.get('/procedures/:id', async (req: Request, res: Response) => {
       };
     }
 
+    let rawProcCronograma = proc.cronograma;
+    if (typeof rawProcCronograma === 'string') {
+      try {
+        rawProcCronograma = JSON.parse(rawProcCronograma);
+      } catch {
+        rawProcCronograma = [];
+      }
+    }
+
     // Si el cronograma está vacío pero tender tiene cronograma_general en campos_extraidos_json, recuperarlo
-    let effectiveCronograma = Array.isArray(proc.cronograma) && proc.cronograma.length > 0
-      ? proc.cronograma
+    let effectiveCronograma = Array.isArray(rawProcCronograma) && rawProcCronograma.length > 0
+      ? rawProcCronograma
       : Array.isArray(tender.campos_extraidos_json?.cronograma_general)
       ? tender.campos_extraidos_json.cronograma_general
       : [];
@@ -244,9 +253,18 @@ tendersRouter.get('/procedures/:id', async (req: Request, res: Response) => {
       });
     }
 
+    let rawProcReqs = proc.requisitos_clave;
+    if (typeof rawProcReqs === 'string') {
+      try {
+        rawProcReqs = JSON.parse(rawProcReqs);
+      } catch {
+        rawProcReqs = [];
+      }
+    }
+
     // Requisitos indispensables combinados
-    const effectiveRequisitos = Array.isArray(proc.requisitos_clave) && proc.requisitos_clave.length > 0
-      ? proc.requisitos_clave
+    const effectiveRequisitos = Array.isArray(rawProcReqs) && rawProcReqs.length > 0
+      ? rawProcReqs
       : Array.isArray(tender.campos_extraidos_json?.requisitos_clave) && tender.campos_extraidos_json.requisitos_clave.length > 0
       ? tender.campos_extraidos_json.requisitos_clave
       : [];
@@ -408,7 +426,17 @@ tendersRouter.post('/procedures/:id/extract-timeline', async (req: Request, res:
     }
 
     const t = tenderRes.rows[0];
-    const sourceText = [t.texto_documentos_ocr, t.contenido_pagina_texto, t.sintesis_claude]
+
+    // Recuperar también el texto extraído de todos los documentos y anexos vinculados a esta licitación
+    const docsRes = await db.query(
+      'SELECT file_name, texto_extraido FROM tender_documents WHERE tender_id = $1 AND LENGTH(texto_extraido) > 10',
+      [tenderId]
+    );
+    const docsTexts = (docsRes.rows || [])
+      .map((d: any) => `=== DOCUMENTO ADJUNTO: ${d.file_name} ===\n${d.texto_extraido}`)
+      .join('\n\n');
+
+    const sourceText = [t.texto_documentos_ocr, docsTexts, t.contenido_pagina_texto, t.sintesis_claude]
       .filter(Boolean)
       .join('\n\n');
 
@@ -650,7 +678,7 @@ tendersRouter.get('/documents/:docId/download', async (req: Request, res: Respon
 
   try {
     const docRes = await db.query(
-      'SELECT file_name, file_type, local_path FROM tender_documents WHERE id = $1 LIMIT 1',
+      'SELECT file_name, file_type, local_path, source_url FROM tender_documents WHERE id = $1 LIMIT 1',
       [docId]
     );
     if (docRes.rowCount === 0) {
@@ -660,7 +688,42 @@ tendersRouter.get('/documents/:docId/download', async (req: Request, res: Respon
 
     const doc = docRes.rows[0];
     if (!doc.local_path || !fs.existsSync(doc.local_path)) {
+      if (doc.source_url && doc.source_url.startsWith('http')) {
+        return res.redirect(doc.source_url);
+      }
       res.status(404).json({ ok: false, message: 'El archivo físico ya no se encuentra en el servidor.' });
+      return;
+    }
+
+    // Comprobar si el archivo físico en disco es en realidad HTML (guardado accidentalmente como .pdf)
+    const fileHeader = Buffer.alloc(16);
+    try {
+      const fd = fs.openSync(doc.local_path, 'r');
+      fs.readSync(fd, fileHeader, 0, 16, 0);
+      fs.closeSync(fd);
+    } catch {
+      // Ignorar fallo de lectura rápida
+    }
+
+    const headerStr = fileHeader.toString('utf-8').trim().toLowerCase();
+    const isActuallyHtml =
+      fileHeader[0] === 0x3c /* '<' */ ||
+      headerStr.startsWith('<!doct') ||
+      headerStr.startsWith('<html') ||
+      headerStr.startsWith('<!') ||
+      headerStr.startsWith('<?xml');
+
+    if (isActuallyHtml) {
+      // Si el archivo en disco es HTML pero se catalogó como PDF, NUNCA enviarlo con application/pdf
+      // porque Chrome falla con "No se pudo cargar el documento PDF".
+      // Redirigir al portal oficial original si existe; si no, servirlo como HTML con iframe permitido.
+      if (doc.source_url && doc.source_url.startsWith('http')) {
+        return res.redirect(doc.source_url);
+      }
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Content-Disposition', 'inline');
+      const stream = fs.createReadStream(doc.local_path);
+      stream.pipe(res);
       return;
     }
 

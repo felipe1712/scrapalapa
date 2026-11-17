@@ -70,6 +70,26 @@ export class DocumentProcessorService {
 
     let resolvedType: 'pdf' | 'docx' | 'doc' = fileType;
     const ctHeader = (res.headers.get('content-type') || '').toLowerCase();
+
+    // Validar si el recurso devuelto es en realidad código HTML (ej. página web gob.mx en lugar de archivo binario)
+    const isHtmlContent =
+      ctHeader.includes('text/html') ||
+      (buffer.length >= 1 && buffer[0] === 0x3c) ||
+      (buffer.length >= 15 && buffer.subarray(0, 15).toString('ascii').toLowerCase().includes('<!doctype'));
+
+    if (isHtmlContent) {
+      // Si la URL descargada resultó ser una página web HTML intermedia (ej. /documentos/convocatoria-slug),
+      // buscar si dentro del HTML existe un enlace de descarga a un archivo .pdf o .docx real para obtener el documento auténtico.
+      const htmlText = buffer.toString('utf-8');
+      const realDocMatch = htmlText.match(/href=["']([^"']+\.(?:pdf|docx|doc)(?:\?[^"']*)?)["']/i);
+      if (realDocMatch) {
+        const resolvedRealUrl = new URL(realDocMatch[1], res.url || fileUrl).toString();
+        const subExt = resolvedRealUrl.split('?')[0].toLowerCase().endsWith('.docx') ? 'docx' : 'pdf';
+        return this.downloadAndProcessDocument(resolvedRealUrl, subExt, ocrMode, authHeaders);
+      }
+      throw new Error(`El enlace ${fileUrl} es una página web (HTML) y no un archivo PDF/Word descargable.`);
+    }
+
     if (buffer.length >= 4 && buffer.subarray(0, 4).toString('ascii') === '%PDF') {
       resolvedType = 'pdf';
     } else if (buffer.length >= 4 && buffer[0] === 0x50 && buffer[1] === 0x4b) {

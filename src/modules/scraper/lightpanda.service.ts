@@ -75,20 +75,38 @@ export function getDocumentPriorityScore(urlStr: string, label = ''): number {
 export function isCandidateTenderLink(urlStr: string, label = ''): boolean {
   const norm = normalizeForSearch(`${urlStr} ${label}`);
   if (norm.includes('javascript:') || norm.includes('mailto:') || norm.includes('#') || norm.includes('tel:')) return false;
-  return (
+
+  // Ignorar enlaces comunes de navegación que no corresponden a expedientes o convocatorias
+  if (
+    norm.includes('contacto') ||
+    norm.includes('terminos') ||
+    norm.includes('privacidad') ||
+    norm.includes('acerca') ||
+    norm.includes('redes') ||
+    norm.includes('facebook') ||
+    norm.includes('twitter') ||
+    norm.includes('nuestros sitios') ||
+    norm.includes('sitios de servicios') ||
+    norm.includes('archivo/todos') ||
+    norm.includes('archivo/articulos') ||
+    norm.includes('archivo/multimedia')
+  ) {
+    return false;
+  }
+
+  // Comprobar términos explícitos de contratación y convocatorias
+  const isExplicitTender =
     norm.includes('convocatoria') ||
     norm.includes('licitaci') ||
     norm.includes('concurso') ||
-    norm.includes('procedimiento') ||
-    norm.includes('adquisici') ||
-    norm.includes('arrendamiento') ||
-    norm.includes('servicio') ||
     norm.includes('cpne') ||
     norm.includes('lpn') ||
-    norm.includes('ia-') ||
+    norm.includes('adjudicaci') ||
     norm.includes('invitaci') ||
-    /\/documentos\/[a-z0-9\-_]+/.test(urlStr.toLowerCase())
-  );
+    /\/documentos\/convocatoria/i.test(urlStr) ||
+    /\/licitaciones\//i.test(urlStr);
+
+  return Boolean(isExplicitTender);
 }
 
 /**
@@ -157,25 +175,22 @@ export function detectDocumentType(
     return 'doc';
   }
 
-  // Detectar enlaces de descarga de bases/convocatorias en portales aunque no terminen en .pdf
-  if (
-    (lowerFullUrl.includes('descarga') ||
-      lowerFullUrl.includes('download') ||
-      lowerFullUrl.includes('archivo') ||
-      lowerFullUrl.includes('documento') ||
-      lowerFullUrl.includes('anexo') ||
-      lowerFullUrl.includes('bases') ||
-      lowerFullUrl.includes('convocatoria')) &&
-    (lowerLabel.includes('pdf') ||
-      lowerLabel.includes('bases') ||
-      lowerLabel.includes('convocatoria') ||
-      lowerLabel.includes('licitaci') ||
-      lowerLabel.includes('descargar') ||
-      lowerLabel.includes('documento') ||
-      lowerLabel.includes('anexo'))
-  ) {
-    if (lowerLabel.includes('word') || lowerLabel.includes('docx')) return 'docx';
-    return 'pdf';
+  // 2. Detección por endpoints explícitos de descarga binaria
+  // NUNCA marcar como PDF una ruta de página web como /documentos/slug o /convocatorias/slug
+  const isWebPagePath = /\/(documentos|convocatorias|noticias|articulos|transparencia)\/[a-z0-9\-_]+$/i.test(lowerUrl);
+  if (!isWebPagePath) {
+    if (
+      (lowerFullUrl.includes('descarga') ||
+        lowerFullUrl.includes('download') ||
+        lowerFullUrl.includes('getfile') ||
+        lowerFullUrl.includes('export_pdf')) &&
+      (lowerLabel.includes('pdf') ||
+        lowerLabel.includes('descargar') ||
+        lowerLabel.includes('bajar'))
+    ) {
+      if (lowerLabel.includes('word') || lowerLabel.includes('docx')) return 'docx';
+      return 'pdf';
+    }
   }
 
   return null;
@@ -568,14 +583,14 @@ export class LightpandaService {
         }
 
         // Si se detectaron enlaces a convocatorias o licitaciones individuales dentro de la URL,
-        // Lightpanda navega a cada una (hasta 12) para traer sus documentos PDF/Word y datos específicos
+        // Lightpanda navega a cada una (hasta 6) para traer sus documentos PDF/Word y datos específicos
         const extraTexts: string[] = [];
         const discoveredSubpages: DiscoveredSubpage[] = [];
 
         if (parsed.candidateDetailUrls.length > 0) {
-          for (const candidate of parsed.candidateDetailUrls.slice(0, 12)) {
+          for (const candidate of parsed.candidateDetailUrls.slice(0, 6)) {
             try {
-              await page.goto(candidate.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+              await page.goto(candidate.url, { waitUntil: 'domcontentloaded', timeout: 10000 });
               const subUrl = page.url() || candidate.url;
               const subHtml = await page.content();
               const subParsed = analyzeHtmlWithKeywords(subHtml, subUrl, keywords);
@@ -808,7 +823,7 @@ export class LightpandaService {
     const extraTexts: string[] = [];
     const discoveredSubpages: DiscoveredSubpage[] = [];
     if (parsed.candidateDetailUrls.length > 0) {
-      for (const candidate of parsed.candidateDetailUrls.slice(0, 12)) {
+      for (const candidate of parsed.candidateDetailUrls.slice(0, 6)) {
         try {
           const subTitle = candidate.snippet.split('\n')[0].slice(0, 180).trim() || 'Convocatoria detectada';
           const subExpMatch = `${candidate.url} ${candidate.snippet}`.match(/\b([A-Z0-9]{2,8}(?:-[A-Z0-9]{2,8}){2,7})\b/i);
@@ -822,7 +837,7 @@ export class LightpandaService {
           const subRes = await fetch(candidate.url, {
             redirect: 'follow',
             headers: reqHeaders,
-            signal: AbortSignal.timeout(15000),
+            signal: AbortSignal.timeout(10000),
           });
           if (subRes.ok) {
             const subCt = subRes.headers.get('content-type') || '';

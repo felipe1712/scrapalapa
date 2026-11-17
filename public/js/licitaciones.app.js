@@ -188,7 +188,7 @@
   }
 
   // Load Hierarchical Tree of Tenders and Procedures
-  async function loadTendersTree(preserveSelection = true) {
+  async function loadTendersTree(preserveSelection = true, isBackground = false) {
     const loadingEl = document.getElementById('treeLoadingState');
     const emptyEl = document.getElementById('treeEmptyState');
     const listEl = document.getElementById('tendersTreeList');
@@ -197,11 +197,13 @@
     if (!listEl) return;
 
     try {
-      loadingEl?.classList.remove('d-none');
-      emptyEl?.classList.add('d-none');
+      if (!isBackground) {
+        loadingEl?.classList.remove('d-none');
+        emptyEl?.classList.add('d-none');
+      }
 
       const res = await fetch('/api/tenders/tree');
-      const data = await res.json();
+      const data = await safeParseJson(res);
 
       if (!data.ok || !Array.isArray(data.tree)) {
         throw new Error(data.error || 'Error al obtener árbol de licitaciones');
@@ -254,9 +256,14 @@
       }
     } catch (err) {
       console.error('Error cargando árbol:', err);
-      showAlert(`Error al cargar árbol de licitaciones: ${err.message}`, 'danger');
+      // Solo mostrar alerta en pantalla si fue una acción directa del usuario y no durante un scraping o polling silencioso
+      if (!isBackground && !state.isIngesting) {
+        showAlert(`Error al cargar árbol de licitaciones: ${err.message}`, 'danger');
+      }
     } finally {
-      loadingEl?.classList.add('d-none');
+      if (!isBackground) {
+        loadingEl?.classList.add('d-none');
+      }
     }
   }
 
@@ -482,22 +489,58 @@
     setupPdfViewer(attachedDocs, parentTender);
   }
 
+  // Helper para alternar entre vista Timeline (gráfica) y Tabla de manera consistente
+  function updateTimelineViewDisplay() {
+    const btnTimelineCards = document.getElementById('btnTimelineViewCards');
+    const btnTimelineTable = document.getElementById('btnTimelineViewTable');
+    const emptyBanner = document.getElementById('timelineEmptyBanner');
+    const graphicWrapper = document.getElementById('timelineGraphicWrapper');
+    const tableWrapper = document.getElementById('detailTimelineTableWrapper');
+
+    if (!state.hasTimelineItems) {
+      emptyBanner?.classList.remove('d-none');
+      graphicWrapper?.classList.add('d-none');
+      tableWrapper?.classList.add('d-none');
+      return;
+    }
+
+    emptyBanner?.classList.add('d-none');
+    if (state.activeTimelineView === 'table') {
+      btnTimelineTable?.classList.add('active');
+      btnTimelineCards?.classList.remove('active');
+      graphicWrapper?.classList.add('d-none');
+      tableWrapper?.classList.remove('d-none');
+    } else {
+      btnTimelineCards?.classList.add('active');
+      btnTimelineTable?.classList.remove('active');
+      graphicWrapper?.classList.remove('d-none');
+      tableWrapper?.classList.add('d-none');
+    }
+  }
+
   // Render Cronograma (WinDOORS Native Timeline + Table)
   function renderCronogramaAndTimeline(proc) {
     const windoorsList = document.getElementById('detailTimelineWindoors');
     const tbodyEl = document.getElementById('detailTimelineTableBody');
     const nextAlertEl = document.getElementById('detailNextMilestoneAlert');
     const nextTextEl = document.getElementById('detailNextMilestoneText');
-    const emptyBanner = document.getElementById('timelineEmptyBanner');
-    const graphicWrapper = document.getElementById('timelineGraphicWrapper');
-    const tableWrapper = document.getElementById('detailTimelineTableWrapper');
 
     if (!windoorsList || !tbodyEl) return;
 
     windoorsList.innerHTML = '';
     tbodyEl.innerHTML = '';
 
-    const cronograma = Array.isArray(proc.cronograma) ? proc.cronograma : [];
+    let cronograma = proc.cronograma;
+    if (typeof cronograma === 'string') {
+      try {
+        cronograma = JSON.parse(cronograma);
+      } catch {
+        cronograma = [];
+      }
+    }
+    if (!Array.isArray(cronograma)) cronograma = [];
+
+    state.hasTimelineItems = cronograma.length > 0;
 
     // Next milestone highlight badge
     if (proc.proximo_evento_nombre) {
@@ -509,20 +552,10 @@
       nextAlertEl?.classList.add('d-none');
     }
 
-    if (cronograma.length === 0) {
-      emptyBanner?.classList.remove('d-none');
-      graphicWrapper?.classList.add('d-none');
-      tableWrapper?.classList.add('d-none');
-      return;
-    }
+    updateTimelineViewDisplay();
 
-    emptyBanner?.classList.add('d-none');
-    if (state.activeTimelineView === 'cards') {
-      graphicWrapper?.classList.remove('d-none');
-      tableWrapper?.classList.add('d-none');
-    } else {
-      graphicWrapper?.classList.add('d-none');
-      tableWrapper?.classList.remove('d-none');
+    if (!state.hasTimelineItems) {
+      return;
     }
 
     const themeColors = ['theme-blue', 'theme-yellow', 'theme-green', 'theme-purple'];
@@ -959,23 +992,15 @@
     // Timeline View Switchers
     const btnTimelineCards = document.getElementById('btnTimelineViewCards');
     const btnTimelineTable = document.getElementById('btnTimelineViewTable');
-    const graphicWrapper = document.getElementById('timelineGraphicWrapper');
-    const tableWrapper = document.getElementById('detailTimelineTableWrapper');
 
     btnTimelineCards?.addEventListener('click', () => {
       state.activeTimelineView = 'cards';
-      btnTimelineCards.classList.add('active');
-      btnTimelineTable?.classList.remove('active');
-      graphicWrapper?.classList.remove('d-none');
-      tableWrapper?.classList.add('d-none');
+      updateTimelineViewDisplay();
     });
 
     btnTimelineTable?.addEventListener('click', () => {
       state.activeTimelineView = 'table';
-      btnTimelineTable.classList.add('active');
-      btnTimelineCards?.classList.remove('active');
-      graphicWrapper?.classList.add('d-none');
-      tableWrapper?.classList.remove('d-none');
+      updateTimelineViewDisplay();
     });
 
     // Scroll to PDF Viewer Card Button
@@ -988,9 +1013,11 @@
     loadPipelineStatus();
     loadTendersTree();
 
-    // Background poll every 60s
+    // Background poll every 60s (silencioso, sin interrumpir si se está ingiriendo)
     setInterval(() => {
-      loadTendersTree(true);
+      if (!state.isIngesting) {
+        loadTendersTree(true, true);
+      }
     }, 60000);
   }
 
