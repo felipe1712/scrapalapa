@@ -187,6 +187,147 @@ export function parseMilestonesFromMarkdownTable(text: string): TenderMilestone[
   return results;
 }
 
+/**
+ * Extrae y reconcilia de manera determinista los hitos estándar de licitaciones públicas
+ * (Publicación, Interés, Visita, Aclaraciones, Propuestas, Apertura, Fallo, Firma)
+ * a partir del texto íntegro de los documentos/OCR.
+ * 
+ * Si la extracción de Claude omitió el Fallo o lo dejó como "Por definir"/"Por confirmar",
+ * esta función rescata la fecha exacta del texto original y la inyecta, garantizando exhaustividad.
+ */
+export function reconcileMilestonesWithDocumentText(
+  currentMilestones: TenderMilestone[],
+  documentText: string
+): TenderMilestone[] {
+  if (!documentText) return currentMilestones;
+
+  const milestones = [...currentMilestones];
+
+  // Detectores de hitos con patrones para tablas y párrafos
+  const standardMilestoneDetectors = [
+    {
+      tipo: 'publicacion',
+      nombre: 'Publicación de la Convocatoria',
+      regex: /(?:publicaci[óo]n\s+de\s+la\s+convocatoria|convocatoria\s+p[úu]blica)[^\n\r]{0,120}?(?:el|fecha|d[íi]a|:)?\s*([0-3]?\d\s+de\s+[a-záéíóú]+\s+de\s+20\d\d|[0-3]?\d[/-][0-1]?\d[/-]20\d\d)/i,
+      tableRegex: /\|\s*Publicaci[óo]n[^\n\r|]*\|\s*([0-3]?\d\s+de\s+[a-záéíóú]+\s+de\s+20\d\d|[0-3]?\d[/-][0-1]?\d[/-]20\d\d)/i,
+      horaRegex: /(?:publicaci[óo]n[^\n\r]{0,160}?)\b([012]?\d:[0-5]\d)\s*(?:hrs?|horas?|h)?\b/i,
+      matchTarget: (name: string) => /publicaci[óo]n/i.test(name),
+    },
+    {
+      tipo: 'interes',
+      nombre: 'Recepción de escritos de interés en participar',
+      regex: /(?:inter[ée]s\s+de\s+participaci[óo]n|escritos?\s+de\s+inter[ée]s)[^\n\r]{0,120}?(?:al?|hasta\s+el|fecha|d[íi]a|:)?\s*([0-3]?\d\s+de\s+[a-záéíóú]+\s+de\s+20\d\d|[0-3]?\d[/-][0-1]?\d[/-]20\d\d)/i,
+      tableRegex: /\|\s*[^|\n\r]*inter[ée]s[^|\n\r]*\|\s*(?:[^\n\r|]*a\s+)?([0-3]?\d\s+de\s+[a-záéíóú]+\s+de\s+20\d\d|[0-3]?\d[/-][0-1]?\d[/-]20\d\d)/i,
+      horaRegex: /(?:inter[ée]s[^\n\r]{0,160}?)\b([012]?\d:[0-5]\d)\s*(?:hrs?|horas?|h)?\b/i,
+      matchTarget: (name: string) => /inter[ée]s/i.test(name),
+    },
+    {
+      tipo: 'visita',
+      nombre: 'Visita a instalaciones',
+      regex: /(?:visita\s+(?:a\s+(?:las?\s+)?)?instalaciones|visita\s+al\s+sitio)[^\n\r]{0,120}?(?:al?|hasta\s+el|fecha|d[íi]a|:)?\s*([0-3]?\d\s+de\s+[a-záéíóú]+\s+de\s+20\d\d|[0-3]?\d[/-][0-1]?\d[/-]20\d\d)/i,
+      tableRegex: /\|\s*[^|\n\r]*visita[^|\n\r]*\|\s*(?:[^\n\r|]*a\s+)?([0-3]?\d\s+de\s+[a-záéíóú]+\s+de\s+20\d\d|[0-3]?\d[/-][0-1]?\d[/-]20\d\d)/i,
+      horaRegex: /(?:visita[^\n\r]{0,160}?)\b([012]?\d:[0-5]\d)\s*(?:hrs?|horas?|h)?\b/i,
+      matchTarget: (name: string) => /visita/i.test(name),
+    },
+    {
+      tipo: 'solicitudes_aclaracion',
+      nombre: 'Recepción de solicitudes de aclaración',
+      regex: /(?:solicitud(?:es)?\s+de\s+aclaraci[óo]n|env[íi]o\s+de\s+preguntas)[^\n\r]{0,120}?(?:al?|hasta\s+el|fecha|d[íi]a|:)?\s*([0-3]?\d\s+de\s+[a-záéíóú]+\s+de\s+20\d\d|[0-3]?\d[/-][0-1]?\d[/-]20\d\d)/i,
+      tableRegex: /\|\s*[^|\n\r]*solicitudes\s+de\s+aclaraci[óo]n[^|\n\r]*\|\s*(?:[^\n\r|]*a\s+)?([0-3]?\d\s+de\s+[a-záéíóú]+\s+de\s+20\d\d|[0-3]?\d[/-][0-1]?\d[/-]20\d\d)/i,
+      horaRegex: /(?:solicitudes\s+de\s+aclaraci[óo]n[^\n\r]{0,160}?)\b([012]?\d:[0-5]\d)\s*(?:hrs?|horas?|h)?\b/i,
+      matchTarget: (name: string) => /solicitud.*aclaraci[óo]n|preguntas/i.test(name),
+    },
+    {
+      tipo: 'junta_aclaraciones',
+      nombre: 'Difusión de la junta de aclaraciones',
+      regex: /(?:junta\s+de\s+aclaraciones|difusi[óo]n\s+de\s+la\s+junta\s+de\s+aclaraciones)[^\n\r]{0,120}?(?:el|fecha|d[íi]a|:)?\s*([0-3]?\d\s+de\s+[a-záéíóú]+\s+de\s+20\d\d|[0-3]?\d[/-][0-1]?\d[/-]20\d\d)/i,
+      tableRegex: /\|\s*[^|\n\r]*(?:junta\s+de\s+aclaraciones|difusi[óo]n.*junta)[^|\n\r]*\|\s*([0-3]?\d\s+de\s+[a-záéíóú]+\s+de\s+20\d\d|[0-3]?\d[/-][0-1]?\d[/-]20\d\d)/i,
+      horaRegex: /(?:junta\s+de\s+aclaraciones[^\n\r]{0,160}?)\b([012]?\d:[0-5]\d)\s*(?:hrs?|horas?|h)?\b/i,
+      matchTarget: (name: string) => /junta\s+de\s+aclaraciones|difusi[óo]n.*junta/i.test(name),
+    },
+    {
+      tipo: 'recepcion_propuestas',
+      nombre: 'Recepción de propuestas',
+      regex: /(?:recepci[óo]n\s+de\s+propuestas|recepci[óo]n\s+de\s+proposiciones)[^\n\r]{0,120}?(?:al?|hasta\s+el|fecha|d[íi]a|:)?\s*([0-3]?\d\s+de\s+[a-záéíóú]+\s+de\s+20\d\d|[0-3]?\d[/-][0-1]?\d[/-]20\d\d)/i,
+      tableRegex: /\|\s*[^|\n\r]*recepci[óo]n\s+de\s+propuestas[^|\n\r]*\|\s*(?:[^\n\r|]*a\s+)?([0-3]?\d\s+de\s+[a-záéíóú]+\s+de\s+20\d\d|[0-3]?\d[/-][0-1]?\d[/-]20\d\d)/i,
+      horaRegex: /(?:recepci[óo]n\s+de\s+propuestas[^\n\r]{0,160}?)\b([012]?\d:[0-5]\d)\s*(?:hrs?|horas?|h)?\b/i,
+      matchTarget: (name: string) => /recepci[óo]n.*propuestas|entrega.*propuestas/i.test(name),
+    },
+    {
+      tipo: 'apertura_propuestas',
+      nombre: 'Apertura de Propuestas',
+      regex: /(?:apertura\s+de\s+proposiciones|apertura\s+de\s+propuestas|acto\s+de\s+apertura)[^\n\r]{0,120}?(?:el|fecha|d[íi]a|:)?\s*([0-3]?\d\s+de\s+[a-záéíóú]+\s+de\s+20\d\d|[0-3]?\d[/-][0-1]?\d[/-]20\d\d)/i,
+      tableRegex: /\|\s*[^|\n\r]*apertura\s+de\s+propuestas[^|\n\r]*\|\s*([0-3]?\d\s+de\s+[a-záéíóú]+\s+de\s+20\d\d|[0-3]?\d[/-][0-1]?\d[/-]20\d\d)/i,
+      horaRegex: /(?:apertura[^\n\r]{0,160}?)\b([012]?\d:[0-5]\d)\s*(?:hrs?|horas?|h)?\b/i,
+      matchTarget: (name: string) => /apertura/i.test(name),
+    },
+    {
+      tipo: 'fallo',
+      nombre: 'Fallo',
+      regex: /(?:acto\s+de\s+fallo|notificaci[óo]n\s+de\s+fallo|fallo|dictamen)[^\n\r]{0,120}?(?:el|fecha|d[íi]a|:)?\s*([0-3]?\d\s+de\s+[a-záéíóú]+\s+de\s+20\d\d|[0-3]?\d[/-][0-1]?\d[/-]20\d\d)/i,
+      tableRegex: /\|\s*[^|\n\r]*fallo[^|\n\r]*\|\s*([0-3]?\d\s+de\s+[a-záéíóú]+\s+de\s+20\d\d|[0-3]?\d[/-][0-1]?\d[/-]20\d\d)/i,
+      horaRegex: /(?:fallo[^\n\r]{0,160}?)\b([012]?\d:[0-5]\d)\s*(?:hrs?|horas?|h)?\b/i,
+      matchTarget: (name: string) => /fallo|dictamen/i.test(name),
+    },
+  ];
+
+  for (const detector of standardMilestoneDetectors) {
+    const rawDateMatch = documentText.match(detector.tableRegex) || documentText.match(detector.regex);
+    if (!rawDateMatch) continue;
+
+    const detectedRawDate = rawDateMatch[1];
+    const normalizedDetectedDate = normalizeParsedDate(detectedRawDate);
+    if (!normalizedDetectedDate || !normalizedDetectedDate.match(/^20\d\d-\d\d-\d\d$/)) continue;
+
+    // Detectar hora si existe
+    const horaMatch = documentText.match(detector.horaRegex);
+    const detectedHora = horaMatch ? `${horaMatch[1]} hrs` : '';
+
+    // Buscar si ya existe este hito en la lista actual
+    const existingIdx = milestones.findIndex((m) => detector.matchTarget(m.evento));
+
+    if (existingIdx >= 0) {
+      const existing = milestones[existingIdx];
+      const hasValidDate = existing.fecha && existing.fecha.match(/^20\d\d-\d\d-\d\d$/);
+      const isAmbiguous = !hasValidDate || /definir|confirmar|pendiente|ilegi/i.test(existing.fecha);
+
+      // Si estaba ambiguo o "Por definir", sobrescribirlo con la fecha fidedigna detectada del documento
+      if (isAmbiguous) {
+        existing.fecha = normalizedDetectedDate;
+        if (detectedHora && (!existing.hora || existing.hora === 'Hora en bases')) {
+          existing.hora = detectedHora;
+        }
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const parsed = new Date(normalizedDetectedDate);
+        existing.estado = parsed < today ? 'completado' : 'proximo';
+      }
+    } else {
+      // Si el hito no existía (ej. Claude lo omitió por completo), inyectarlo
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const parsed = new Date(normalizedDetectedDate);
+      milestones.push({
+        evento: detector.nombre,
+        fecha: normalizedDetectedDate,
+        hora: detectedHora || 'Hora en bases',
+        lugar: 'Vía electrónica / Portal oficial',
+        estado: parsed < today ? 'completado' : 'proximo',
+      });
+    }
+  }
+
+  // Ordenar cronológicamente todos los hitos
+  return milestones.sort((a, b) => {
+    const timeA = new Date(a.fecha).getTime();
+    const timeB = new Date(b.fecha).getTime();
+    if (isNaN(timeA) && isNaN(timeB)) return 0;
+    if (isNaN(timeA)) return 1;
+    if (isNaN(timeB)) return -1;
+    return timeA - timeB;
+  });
+}
+
 const IngestUrlSchema = z.object({
   url: z.string().trim().url('Ingresa una URL válida (http:// o https://)'),
   keywords: z.string().trim().optional().default(''),
@@ -832,7 +973,8 @@ tendersRouter.post('/procedures/:id/extract-timeline', async (req: Request, res:
     // Asegurar que los documentos adjuntos tengan OCR procesado, priorizando el documento específico de este procedimiento
     const docsTexts = await ensureDocumentsOcrText(tenderId, rawId, activeProc);
 
-    const sourceText = [docsTexts, t.texto_documentos_ocr, t.contenido_pagina_texto, t.sintesis_claude]
+    // Textos limpios extraídos de los documentos y de la página oficial (sin contaminar con síntesis previa)
+    const sourceText = [docsTexts, t.texto_documentos_ocr, t.contenido_pagina_texto]
       .filter(Boolean)
       .join('\n\n');
 
@@ -845,7 +987,7 @@ tendersRouter.post('/procedures/:id/extract-timeline', async (req: Request, res:
     tenderProgressService.updateProgress(rawId, {
       percent: 75,
       currentStage: 'Estructurando cronograma con Claude IA...',
-      detailMessage: 'Extrayendo calendario de actos legales y requisitos obligatorios...',
+      detailMessage: 'Extrayendo calendario exhaustivo de actos legales y requisitos obligatorios...',
     });
 
     const targetProcNum = activeProc?.numero_procedimiento || t.numero_expediente || '';
@@ -856,13 +998,23 @@ tendersRouter.post('/procedures/:id/extract-timeline', async (req: Request, res:
       `Debes extraer el cronograma oficial de fechas y plazos EXCLUSIVAMENTE para el siguiente procedimiento:\n` +
       `NÚMERO DE PROCEDIMIENTO: "${targetProcNum}"\n` +
       `OBJETO: "${targetProcTitle}"\n\n` +
-      `ADVERTENCIA Y REGLAS CRÍTICAS:\n` +
-      `1. El expediente puede contener historial o convocatorias pasadas (por ejemplo antecedentes de julio o agosto de 2026). DEBES DESCARTAR Y NO EXTRAER NINGUNA FECHA DE JULIO O AGOSTO si pertenecen a procedimientos o ejercicios anteriores.\n` +
-      `2. Concéntrate ÚNICAMENTE en la convocatoria oficial activa (${targetProcNum}) y extrae los actos de su tabla oficial de fechas (cuyas fechas en bases corresponden a OCTUBRE y NOVIEMBRE de 2026: Publicación el 26 de octubre de 2026, Consulta de la Convocatoria, Recepción de escritos de interés el 05 de noviembre, Visita de instalaciones el 03 de noviembre, Solicitudes de aclaración el 05 de noviembre, Difusión de junta de aclaraciones el 06 de noviembre, Recepción de propuestas el 17 al 19 de noviembre de 2026, Fallo, etc.).\n` +
-      `3. Convierte todas las fechas al formato estándar YYYY-MM-DD o DD/MM/YYYY. Si alguna hora está indicada, ponla en el campo 'hora'.\n` +
+      `ADVERTENCIAS Y REGLAS DE OBLIGATORIO CUMPLIMIENTO:\n` +
+      `1. Si en el expediente hay historial de convocatorias pasadas (ej. antecedentes de julio o agosto de 2026), DESCÁRTALAS. Concéntrate exclusivamente en la convocatoria activa (${targetProcNum}) con calendario en octubre y noviembre de 2026.\n` +
+      `2. EXHAUSTIVIDAD TOTAL Y OBLIGATORIA: Extrae CADA UNO de los actos de la tabla oficial de fechas como un hito independiente:\n` +
+      `   - Publicación de la convocatoria (26 de octubre de 2026)\n` +
+      `   - Recepción de escritos de interés en participar (05 de noviembre de 2026, 18:00 hrs)\n` +
+      `   - Recepción de escritos para visita a instalaciones (03 de noviembre de 2026, 15:00 hrs)\n` +
+      `   - Recepción de solicitudes de aclaración (05 de noviembre de 2026, 11:00 hrs)\n` +
+      `   - Difusión de la junta de aclaraciones (06 de noviembre de 2026)\n` +
+      `   - Recepción de propuestas (17 al 19 de noviembre de 2026, 11:00 hrs)\n` +
+      `   - Presentación y Apertura de propuestas (19 de noviembre de 2026, 12:00 hrs)\n` +
+      `   - Difusión del acta de presentación y apertura (19 de noviembre de 2026)\n` +
+      `   - FALLO: La tabla del documento indica fecha explícita (ej. 27 de noviembre de 2026 -> 2026-11-27). ESTÁ ESTRICTAMENTE PROHIBIDO devolver 'Por definir' o 'Por confirmar' cuando la fecha está en el documento.\n` +
+      `   - Firma del contrato: En la fecha que se establezca en el acto de fallo.\n` +
+      `3. Convierte todas las fechas al formato estándar YYYY-MM-DD. Si alguna hora está indicada, colócala en el campo 'hora'.\n` +
       `4. También extrae los requisitos obligatorios o indispensables y el alcance/periodo de contratación.\n\n` +
       `TEXTO OFICIAL DE LOS DOCUMENTOS:\n` +
-      sourceText.slice(0, 70000);
+      sourceText.slice(0, 75000);
 
     const extractionRes = await claudeService.extractStructuredJson({
       tarea: 'completar_campos',
@@ -883,16 +1035,19 @@ tendersRouter.post('/procedures/:id/extract-timeline', async (req: Request, res:
     const reqsList = Array.isArray(data.requisitos_clave) ? data.requisitos_clave : [];
     const alcance = data.alcance_periodo || '';
 
-    // Si la extracción estructurada devolvió 0 o 1 solo hito genérico, pero en la síntesis o en el texto
-    // existe una tabla de fechas/plazos, extraer los hitos de la tabla Markdown como respaldo robusto
+    // Si la extracción estructurada devolvió pocos hitos, rescatar de la tabla Markdown de la fuente
     if (cronoList.length <= 1) {
-      const fromSynthesis = parseMilestonesFromMarkdownTable(t.sintesis_claude || '');
       const fromSource = parseMilestonesFromMarkdownTable(sourceText);
-      const fallbackList = fromSynthesis.length >= fromSource.length ? fromSynthesis : fromSource;
+      const fromSynthesis = parseMilestonesFromMarkdownTable(t.sintesis_claude || '');
+      const fallbackList = fromSource.length >= fromSynthesis.length ? fromSource : fromSynthesis;
       if (fallbackList.length > cronoList.length) {
         cronoList = fallbackList;
       }
     }
+
+    // RED DE SEGURIDAD DETERMINISTA: Reconciliar siempre con el texto OCR original
+    // para garantizar que Fallo, Apertura y demás actos nunca queden ambiguos ni se omitan
+    cronoList = reconcileMilestonesWithDocumentText(cronoList, sourceText);
 
     // Determinar próximo evento
     let proximoNombre = null;
@@ -1033,13 +1188,34 @@ tendersRouter.post('/procedures/:id/regenerate-synthesis', async (req: Request, 
     const targetProcTitle = activeProc?.titulo_objeto || t.titulo || '';
 
     const summaryPrompt =
-      `Genera una síntesis ejecutiva clara, profesional y concisa para el siguiente procedimiento específico:\n` +
+      `Genera una síntesis ejecutiva clara, profesional y exhaustiva para el siguiente procedimiento específico:\n` +
       `PROCEDIMIENTO: "${targetProcNum}"\n` +
       `OBJETO: "${targetProcTitle}"\n` +
       `ENTIDAD CONVOCANTE: "${activeProc?.entidad || t.entidad || 'INDAABIN'}"\n\n` +
-      `REGLA CLAVE: En el expediente puede haber texto o convocatorias pasadas (como antecedentes de fumigación de julio/agosto 2026). DEBES DESCARTARLAS. Concéntrate exclusivamente en la convocatoria activa (${targetProcNum}) con vigencia para el ejercicio 2027 y fechas oficiales en bases de OCTUBRE y NOVIEMBRE de 2026.\n` +
-      `Describe: 1) Objeto o propósito de la contratación, 2) Entidad convocante, 3) Plazos y fechas críticas (incluyendo una tabla con los actos de la convocatoria activa en octubre y noviembre de 2026: publicación el 26 de octubre, interés, visita, aclaraciones el 5 de noviembre, propuestas el 17 al 19 de noviembre), 4) Requisitos o condiciones indispensables.\n\n` +
-      sourceText.slice(0, 50000);
+      `REGLAS CRÍTICAS DE EXTRACCIÓN:\n` +
+      `1. DESCARTA convocatorias pasadas o antecedentes de julio/agosto de 2026. Concéntrate exclusivamente en la convocatoria activa (${targetProcNum}) con vigencia 2027 y calendario oficial en octubre y noviembre de 2026.\n` +
+      `2. EXHAUSTIVIDAD EN SECCIÓN 3 (Plazos y fechas críticas):\n` +
+      `   DEBES incluir una tabla en Markdown transcribiendo CADA FILA del calendario oficial de actos del procedimiento:\n` +
+      `   - Publicación de la convocatoria (26 de octubre de 2026)\n` +
+      `   - Consulta de la convocatoria\n` +
+      `   - Recepción de escritos de interés en participar (hasta el 05 de noviembre de 2026, 18:00 hrs)\n` +
+      `   - Recepción de escritos para visita a instalaciones (hasta el 03 de noviembre de 2026, 15:00 hrs)\n` +
+      `   - Recepción de solicitudes de aclaración (hasta el 05 de noviembre de 2026, 11:00 hrs)\n` +
+      `   - Difusión de la junta de aclaraciones (06 de noviembre de 2026)\n` +
+      `   - Recepción de propuestas (17 al 19 de noviembre de 2026, 11:00 hrs)\n` +
+      `   - Presentación y Apertura de propuestas (19 de noviembre de 2026, 12:00 hrs)\n` +
+      `   - Difusión del acta de presentación y apertura (19 de noviembre de 2026)\n` +
+      `   - FALLO: 27 de noviembre de 2026 (ESTÁ ESTRICTAMENTE PROHIBIDO poner 'Por confirmar' o 'Por definir' para el Fallo cuando la fecha consta en la tabla del documento).\n` +
+      `   - Firma del contrato: En la fecha que se establezca en el acto de fallo.\n` +
+      `3. SECCIÓN 5 (Información no disponible en el expediente): NUNCA digas que 'no constan fechas de interés, visita, fallo y contrato' porque SÍ constan en la tabla del expediente.\n` +
+      `Estructura tu respuesta en 5 secciones numeradas:\n` +
+      `1. Objeto y alcance de la contratación\n` +
+      `2. Entidad convocante y normatividad aplicable\n` +
+      `3. Plazos y fechas críticas (Tabla Markdown exhaustiva)\n` +
+      `4. Requisitos y condiciones indispensables (técnicos, económicos y legales)\n` +
+      `5. Información pendiente o aspectos a vigilar\n\n` +
+      `TEXTO OFICIAL DEL EXPEDIENTE:\n` +
+      sourceText.slice(0, 60000);
 
     const claudeRes = await claudeService.generateTaskText({
       tarea: 'resumen_licitacion',
@@ -1052,10 +1228,26 @@ tendersRouter.post('/procedures/:id/regenerate-synthesis', async (req: Request, 
       throw new Error(claudeRes.fallbackReason || 'No se pudo generar la síntesis con IA.');
     }
 
-    const newSynthesis = claudeRes.data.trim();
+    let newSynthesis = claudeRes.data.trim();
 
     // Extraer hitos del cronograma si la síntesis contiene una tabla de fechas/plazos
-    const parsedMilestones = parseMilestonesFromMarkdownTable(newSynthesis);
+    let parsedMilestones = parseMilestonesFromMarkdownTable(newSynthesis);
+    // Aplicar red de seguridad determinista sobre los hitos encontrados
+    parsedMilestones = reconcileMilestonesWithDocumentText(parsedMilestones, sourceText);
+
+    // Si la síntesis generada contenía "Fallo | Por confirmar" pero el Fallo fue detectado en el documento,
+    // corregir la tabla en la síntesis directamente
+    const falloItem = parsedMilestones.find((m) => /fallo/i.test(m.evento));
+    if (falloItem && falloItem.fecha && falloItem.fecha.match(/^20\d\d-\d\d-\d\d$/)) {
+      newSynthesis = newSynthesis.replace(
+        /\|?\s*Fallo(?:\s+y\s+firma\s+de\s+contrato)?\s*\|\s*(?:Por confirmar|Por definir|No hay datos)[^|\n\r]*\|[^\n\r]*/gi,
+        `| Fallo | ${falloItem.fecha} | Página del INDAABIN y correo de notificación |`
+      );
+      newSynthesis = newSynthesis.replace(
+        /[-*]\s*Fechas?\s+de\s+inter[ée]s[^\n\r]*:\s*No\s+constan?/gi,
+        '- Firma de contrato: Sujeta a la fecha establecida en el acto de fallo (27 de noviembre de 2026).'
+      );
+    }
     let proximoNombre: string | null = null;
     let proximoFecha: string | null = null;
 

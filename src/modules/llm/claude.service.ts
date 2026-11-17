@@ -656,8 +656,11 @@ export class ClaudeService {
     contentBlocks.push({
       type: 'text',
       text:
-        'Realiza el OCR completo y fiel de todas las páginas mostradas de este documento de licitación. ' +
-        'Transcribe íntegramente todas las tablas (números de licitación, conceptos/descripciones, fechas, horarios, costos de bases, cantidades) y todo el texto legal. ' +
+        'Realiza el OCR completo y fiel de todas las páginas mostradas de este documento de licitación pública.\n' +
+        'REGLA CRÍTICA PARA TABLAS DE CALENDARIOS Y FECHAS:\n' +
+        '- Transcribe ÍNTEGRAMENTE todas las filas y columnas de las tablas de fechas, plazos y cronogramas sin omitir ni resumir ninguna fila.\n' +
+        '- Pon especial atención a las filas inferiores que contienen: "Presentación y Apertura de propuestas", "Difusión del acta de apertura", "Fallo" o "Dictamen" y "Firma del contrato", transcribiendo con exactitud cada fecha y horario.\n' +
+        '- Transcribe también números de licitación, partidas, conceptos, frecuencias y todo el texto legal.\n' +
         'Separa cada página con el encabezado "--- PÁGINA N ---".',
     });
 
